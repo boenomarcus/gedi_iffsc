@@ -1,13 +1,27 @@
-import h5py, pymongo, os
+import os, h5py, pymongo, geojson
 from datetime import datetime
+from shapely.geometry import Point, Polygon
 
 
 l1b_filepath = 'C:\\Users\\marcu\\Documents\\courses\\gedi_notebooks\\data\\processed_GEDI01_B_2019288081641_O04758_T01894_02_003_01.h5'
 # l1b_filename = 'processed_GEDI01_B_2019288081641_O04758_T01894_02_003_01.h5'
 
+def buildPolygonFrom_MultiPolygonGeoJSON(geo_filepath):
+    
+    # Open GeoJSON file
+    with open(geo_filepath) as f:
+        gj = geojson.load(f)
+
+    # Subset info of interest
+    coords = gj['features'][0]['geometry']['coordinates'][0][0]
+
+    # Return shapely polygon
+    return Polygon([tuple([xy_pair[1], xy_pair[0]]) for xy_pair in coords])
 
 
 def process_l1b_shot(shot_index, beam, l1b_filename, l1b_h5, num_shots):
+
+    # CHECK IF SHOTS IS WITHIN ROI PRIOR TO INSERT IT INTO MONGODB !!!
     
     # Extracting info to populate shot dictionary to mongodb
     # 
