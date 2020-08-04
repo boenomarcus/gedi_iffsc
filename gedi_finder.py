@@ -7,6 +7,8 @@ from datetime import datetime
 gedi_products_list = ['GEDI01_B', 'GEDI02_A', 'GEDI02_B']
 gedi_versions_list = ['001']
 
+# Bounding Box for the Santa Catarina State
+default_bbox = [-25.9, -53.9, -29.5, -48]
 
 # Options for main menu
 mainMenu_options = [

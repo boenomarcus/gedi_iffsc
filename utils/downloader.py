@@ -42,6 +42,13 @@ def check_bbox(bbox):
 def gedi_bbox():
     
     while True:
+        
+        # Enter option for the user to find files using default_bbox (SC State)
+
+        ## CODE HERE
+
+        # 
+        
         print('\n' + '--- Enter Bounding Box Coordinates [WGS84 lat/long]:')
         coords = [
             'Upper-Left Latitude: ',
