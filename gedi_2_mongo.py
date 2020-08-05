@@ -3,8 +3,140 @@ from datetime import datetime
 from shapely.geometry import Point, Polygon
 
 
-l1b_filepath = 'C:\\Users\\marcu\\Documents\\courses\\gedi_notebooks\\data\\processed_GEDI01_B_2019288081641_O04758_T01894_02_003_01.h5'
+l1b_filepath = 'C:\\Users\\marcu\\Documents\\iffsc\\gedi_data_ex\\processed_GEDI01_B_2019300171956_O04950_T04703_02_003_01.h5'
 # l1b_filename = 'processed_GEDI01_B_2019288081641_O04758_T01894_02_003_01.h5'
+
+# File indicating region of interest for shot data to be stored into MongoDB
+roi = 'C:\\Users\\marcu\\Documents\\GitHub\\gedi_iffsc\\geo\\sc_b5k_s2k_edit.geojson'
+
+
+
+
+def process_l1b_beam_v2(l1b_h5, beam, l1b_filename):
+
+    # Retrieve number of shots within a given GEDI Beam
+    num_shots = len(l1b_h5[beam + "/shot_number"])
+
+    # Define number of rounds
+    if num_shots // 1000 < 1:
+        num_rounds = 1
+    elif num_shots % 1000 > 0:
+        num_rounds = num_shots // 1000 + 1
+    else:
+        num_rounds = num_shots // 1000
+
+    # Creating begin and end indexes for the batch runs
+    indexes = [[i*1000, i*1000 + 999] for i in list(range(num_rounds))]
+
+    # Adjusting last index to number of shots in the beam
+    if indexes[-1][1] >= num_shots:
+        indexes[-1][1] = num_shots - 1
+
+    # Process batches of GEDI Shots
+    for begin_index, end_index in indexes:
+        
+        print(
+            '\n\nStoring shots {} to {} [{} total] from {} [file = {}]'.format(
+                begin_index, end_index, num_shots, beam, l1b_filename
+                )
+            )
+        
+        # Retrieve shot data
+        print('> Retrieving and structuring data ...')
+        shots = process_l1b_shot_v2(
+            begin_index, end_index, beam, l1b_filename, l1b_h5
+            )
+
+        # Store data into MongoDB
+        print('> Storing data into MongoDB ...', end = '')
+        if len(shots) > 0:
+            with pymongo.mongo_client.MongoClient() as mongo:
+                db = mongo.get_database("gedi_test_2")
+                db['shots'].insert_many(shots)
+        
+
+
+
+
+def process_l1b_shot_v2(begin_index, end_index, beam, l1b_filename, l1b_h5):
+    
+    doc_list = []
+
+    for shot_index in list(range(begin_index, end_index + 1)):
+
+        # Create Shapely Point to check if shot is within ROI area
+        shot_geoLocation = Point(
+            l1b_h5[beam + "/geolocation/latitude_bin0"][shot_index],
+            l1b_h5[beam + "/geolocation/longitude_bin0"][shot_index]
+            )
+
+        # Check if the shot is within ROI.
+        # If True store data otherwise move to next shot
+        if shot_geoLocation.within(roi_poly) is True:
+
+            # Extracting info to populate shot dictionary to mongodb
+            # 
+            # Info on date of acquisition
+            d_iso = datetime.strptime(l1b_filename[21:26], '%y%j')
+            d_str = str(d_iso.year) + str(d_iso.month).zfill(2) + str(d_iso.day).zfill(2) 
+            #
+            # Info on orbit, track, beam id and shot number
+            orbit = l1b_filename[33:39]
+            track = l1b_filename[40:46]
+            shot_number = str(l1b_h5[beam + "/shot_number"][shot_index])
+            beam_id = bin(l1b_h5[beam + "/beam"][0])[2:].zfill(4)
+            #
+            # Info on waveform measurements
+            startIndex = l1b_h5[beam + "/rx_sample_start_index"][shot_index]
+            sample_count = l1b_h5[beam + "/rx_sample_count"][shot_index]
+            samples = list(l1b_h5[beam + "/rxwaveform"][int(startIndex-1):int(startIndex-1)+sample_count])
+            samples = [str(n) for n in samples]
+
+            # Building dictionary to store shot data into MongoDB
+            shot = {
+                "uniqueID": '_'.join([d_str, orbit, track, beam_id, shot_number]),
+                "beam": beam_id,
+                "beam_type": l1b_h5[beam].attrs["description"],
+                "date_acquire": d_iso,
+                "orbit": orbit,
+                "track": track,
+                "shot_number": shot_number,
+                "files_origin": [l1b_filename],
+                "TanDEM_X_elevation": str(l1b_h5[beam + "/geolocation/digital_elevation_model"][shot_index]),
+                "location": {
+                    "type": "Point",
+                    "coordinates": [
+                        l1b_h5[beam + "/geolocation/longitude_bin0"][shot_index],
+                        l1b_h5[beam + "/geolocation/latitude_bin0"][shot_index]
+                        ]
+                },
+                "GEDI_L1B": {
+                    "rx_sample_count": str(sample_count),
+                    "rx_sample_start_index": str(startIndex),
+                    "rxwaveform": samples,
+                    "stale_return_flag": str(l1b_h5[beam + "/stale_return_flag"][shot_index]),
+                    "degrade": str(l1b_h5[beam + "/geolocation/degrade"][shot_index]),
+                    "elevation_bin0": str(l1b_h5[beam + "/geolocation/elevation_bin0"][shot_index]),
+                    "elevation_bin0_error": str(l1b_h5[beam + "/geolocation/elevation_bin0_error"][shot_index]),
+                    "elevation_lastbin": str(l1b_h5[beam + "/geolocation/elevation_lastbin"][shot_index]),
+                    "elevation_lastbin_error": str(l1b_h5[beam + "/geolocation/elevation_lastbin_error"][shot_index]),
+                    "latitude_bin0_error": str(l1b_h5[beam + "/geolocation/latitude_bin0_error"][shot_index]),
+                    "longitude_bin0_error": str(l1b_h5[beam + "/geolocation/longitude_bin0_error"][shot_index]),
+                    "surface_type": [
+                        str(l1b_h5[beam + "/geolocation/surface_type"][i][shot_index]) for i in list(range(5))
+                        ]
+                }
+
+            }
+
+            # Appending found shot to list
+            doc_list.append(shot)
+    
+    # Return results
+    return doc_list
+        
+
+
 
 def singlePol_from_singlePolQGISGeoJSON(geo_filepath):
     
@@ -22,72 +154,90 @@ def singlePol_from_singlePolQGISGeoJSON(geo_filepath):
 def process_l1b_shot(shot_index, beam, l1b_filename, l1b_h5, num_shots):
 
     # CHECK IF SHOTS IS WITHIN ROI PRIOR TO INSERT IT INTO MONGODB !!!
-    
-    # Extracting info to populate shot dictionary to mongodb
-    # 
-    # Info on date of acquisition
-    d_iso = datetime.strptime(l1b_filename[21:26], '%y%j')
-    d_str = str(d_iso.year) + str(d_iso.month).zfill(2) + str(d_iso.day).zfill(2) 
-    #
-    # Info on orbit, track, beam id and shot number
-    orbit = l1b_filename[33:39]
-    track = l1b_filename[40:46]
-    shot_number = str(l1b_h5[beam + "/shot_number"][shot_index])
-    beam_id = bin(l1b_h5[beam + "/beam"][0])[2:].zfill(4)
-    #
-    # Info on waveform measurements
-    startIndex = l1b_h5[beam + "/rx_sample_start_index"][shot_index]
-    sample_count = l1b_h5[beam + "/rx_sample_count"][shot_index]
-    samples = list(l1b_h5[beam + "/rxwaveform"][int(startIndex-1):int(startIndex-1)+sample_count])
-    samples = [str(n) for n in samples]
 
-    print(f'Inserting Shot {shot_number} [{shot_index}/{num_shots}] of {beam}', end='')
+    # Create Shapely Point to check if shot is within ROI area
+    shot_geoLocation = Point(
+        l1b_h5[beam + "/geolocation/latitude_bin0"][shot_index],
+        l1b_h5[beam + "/geolocation/longitude_bin0"][shot_index]
+        )
 
-    # Building dictionary to store shot data into MongoDB
-    shot = {
-        "uniqueID": '_'.join([d_str, orbit, track, beam_id, shot_number]),
-        "beam": beam_id,
-        "beam_type": l1b_h5[beam].attrs["description"],
-        "date_acquire": d_iso,
-        "orbit": orbit,
-        "track": track,
-        "shot_number": shot_number,
-        "files_origin": [l1b_filename],
-        "TanDEM_X_elevation": str(l1b_h5[beam + "/geolocation/digital_elevation_model"][shot_index]),
-        "location": {
-            "type": "Point",
-            "coordinates": [
-                l1b_h5[beam + "/geolocation/longitude_bin0"][shot_index],
-                l1b_h5[beam + "/geolocation/latitude_bin0"][shot_index]
-                ]
-        },
-        "GEDI_L1B": {
-            "rx_sample_count": str(sample_count),
-            "rx_sample_start_index": str(startIndex),
-            "rxwaveform": samples,
-            "stale_return_flag": str(l1b_h5[beam + "/stale_return_flag"][shot_index]),
-            "degrade": str(l1b_h5[beam + "/geolocation/degrade"][shot_index]),
-            "elevation_bin0": str(l1b_h5[beam + "/geolocation/elevation_bin0"][shot_index]),
-            "elevation_bin0_error": str(l1b_h5[beam + "/geolocation/elevation_bin0_error"][shot_index]),
-            "elevation_lastbin": str(l1b_h5[beam + "/geolocation/elevation_lastbin"][shot_index]),
-            "elevation_lastbin_error": str(l1b_h5[beam + "/geolocation/elevation_lastbin_error"][shot_index]),
-            "latitude_bin0_error": str(l1b_h5[beam + "/geolocation/latitude_bin0_error"][shot_index]),
-            "longitude_bin0_error": str(l1b_h5[beam + "/geolocation/longitude_bin0_error"][shot_index]),
-            "surface_type": [
-                str(l1b_h5[beam + "/geolocation/surface_type"][i][shot_index]) for i in list(range(5))
-                ]
+    # Check if the shot is within ROI.
+    # If True store data otherwise move to next shot
+    if shot_geoLocation.within(roi_poly) is True:
+        
+        # Extracting info to populate shot dictionary to mongodb
+        # 
+        # Info on date of acquisition
+        d_iso = datetime.strptime(l1b_filename[21:26], '%y%j')
+        d_str = str(d_iso.year) + str(d_iso.month).zfill(2) + str(d_iso.day).zfill(2) 
+        #
+        # Info on orbit, track, beam id and shot number
+        orbit = l1b_filename[33:39]
+        track = l1b_filename[40:46]
+        shot_number = str(l1b_h5[beam + "/shot_number"][shot_index])
+        beam_id = bin(l1b_h5[beam + "/beam"][0])[2:].zfill(4)
+        #
+        # Info on waveform measurements
+        startIndex = l1b_h5[beam + "/rx_sample_start_index"][shot_index]
+        sample_count = l1b_h5[beam + "/rx_sample_count"][shot_index]
+        samples = list(l1b_h5[beam + "/rxwaveform"][int(startIndex-1):int(startIndex-1)+sample_count])
+        samples = [str(n) for n in samples]
+
+        print(f'Inserting Shot {shot_number} [{shot_index}/{num_shots}] of {beam}', end='')
+
+        # Building dictionary to store shot data into MongoDB
+        shot = {
+            "uniqueID": '_'.join([d_str, orbit, track, beam_id, shot_number]),
+            "beam": beam_id,
+            "beam_type": l1b_h5[beam].attrs["description"],
+            "date_acquire": d_iso,
+            "orbit": orbit,
+            "track": track,
+            "shot_number": shot_number,
+            "files_origin": [l1b_filename],
+            "TanDEM_X_elevation": str(l1b_h5[beam + "/geolocation/digital_elevation_model"][shot_index]),
+            "location": {
+                "type": "Point",
+                "coordinates": [
+                    l1b_h5[beam + "/geolocation/longitude_bin0"][shot_index],
+                    l1b_h5[beam + "/geolocation/latitude_bin0"][shot_index]
+                    ]
+            },
+            "GEDI_L1B": {
+                "rx_sample_count": str(sample_count),
+                "rx_sample_start_index": str(startIndex),
+                "rxwaveform": samples,
+                "stale_return_flag": str(l1b_h5[beam + "/stale_return_flag"][shot_index]),
+                "degrade": str(l1b_h5[beam + "/geolocation/degrade"][shot_index]),
+                "elevation_bin0": str(l1b_h5[beam + "/geolocation/elevation_bin0"][shot_index]),
+                "elevation_bin0_error": str(l1b_h5[beam + "/geolocation/elevation_bin0_error"][shot_index]),
+                "elevation_lastbin": str(l1b_h5[beam + "/geolocation/elevation_lastbin"][shot_index]),
+                "elevation_lastbin_error": str(l1b_h5[beam + "/geolocation/elevation_lastbin_error"][shot_index]),
+                "latitude_bin0_error": str(l1b_h5[beam + "/geolocation/latitude_bin0_error"][shot_index]),
+                "longitude_bin0_error": str(l1b_h5[beam + "/geolocation/longitude_bin0_error"][shot_index]),
+                "surface_type": [
+                    str(l1b_h5[beam + "/geolocation/surface_type"][i][shot_index]) for i in list(range(5))
+                    ]
+            }
+
         }
 
-    }
-
-    # Storing data into MongoDB
-    with pymongo.mongo_client.MongoClient() as mongo:
-        db = mongo.get_database("gedi_test")
-        db['shots'].insert_one(shot)
+        # Storing data into MongoDB
+        with pymongo.mongo_client.MongoClient() as mongo:
+            db = mongo.get_database("gedi_test")
+            db['shots'].insert_one(shot)
+        
+        print('... OK')
+    else:
+        print(
+            'Shot {} [{}/{}]does not fall into ROI ... Moving on ...'.format(
+                str(l1b_h5[beam + "/shot_number"][shot_index]),
+                shot_index,
+                num_shots
+                )
+            )
     
-    print('... OK')
-
-
+    
 def process_l1b_beam(l1b_h5, beam, l1b_filename):
     
     # Retrieve number of shots within a given GEDI Beam
@@ -108,9 +258,14 @@ def process_l1b_file(l1b_filepath):
 
     # Process each L1B Beam
     for beam in beam_list:
-        process_l1b_beam(l1b_h5, beam, os.path.basename(l1b_filepath))
+        process_l1b_beam_v2(l1b_h5, beam, os.path.basename(l1b_filepath))
 
 if __name__ == '__main__':
+    
+    # Load Bound limits to shots to be inserted into MongoDB
+    roi_poly = singlePol_from_singlePolQGISGeoJSON(roi)
+
+    # Start processing L1B Files
     process_l1b_file(l1b_filepath)
 
 
