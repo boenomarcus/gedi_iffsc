@@ -6,17 +6,17 @@ from shapely.geometry import Point, Polygon
 l1b_filepath = 'C:\\Users\\marcu\\Documents\\courses\\gedi_notebooks\\data\\processed_GEDI01_B_2019288081641_O04758_T01894_02_003_01.h5'
 # l1b_filename = 'processed_GEDI01_B_2019288081641_O04758_T01894_02_003_01.h5'
 
-def buildPolygonFrom_MultiPolygonGeoJSON(geo_filepath):
+def singlePol_from_singlePolQGISGeoJSON(geo_filepath):
     
     # Open GeoJSON file
     with open(geo_filepath) as f:
         gj = geojson.load(f)
 
     # Subset info of interest
-    coords = gj['features'][0]['geometry']['coordinates'][0][0]
+    coords = gj['features'][0]['geometry']['coordinates'][0]
 
     # Return shapely polygon
-    return Polygon([tuple([xy_pair[1], xy_pair[0]]) for xy_pair in coords])
+    return Polygon([tuple([pair[1], pair[0]]) for pair in coords])
 
 
 def process_l1b_shot(shot_index, beam, l1b_filename, l1b_h5, num_shots):
