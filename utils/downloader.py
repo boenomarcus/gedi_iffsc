@@ -5,7 +5,7 @@ def gedi_products(products, colorId=3, colorStr=2):
     print('\n' + '--- Select Desired GEDI Product:')
     for pos, prod in enumerate(products):
         print(
-            '{} - {}'.format(
+            '[{}] {}'.format(
                 strings.colors(pos+1, colorId), strings.colors(prod, colorStr)
             )
         )
@@ -18,7 +18,7 @@ def gedi_version(versions, colorId=3, colorStr=2):
     print('\n' + '--- Select Desired GEDI Version:')
     for pos, vers in enumerate(versions):
         print(
-            '{} - {}'.format(
+            '[{}] {}'.format(
                 strings.colors(pos+1, colorId), strings.colors(vers, colorStr)
             )
         )

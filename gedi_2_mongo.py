@@ -1,421 +1,104 @@
-import os, h5py, pymongo, geojson
+import os, sys, h5py, pymongo, geojson
 from datetime import datetime
+from glob import glob
 from shapely.geometry import Point, Polygon
+from utils import strings, numbers, db_storer
 
+# Local storage for files downloaded from earthdata and ROI
+#   must have folders "GEDI01_B", "GEDI02_A", and "GEDI02_B" keeping gedi files
+localStorage = 'C:\\Users\\marcu\\gedi_files'
+
+# Available GEDI products and versions
+gedi_products_list = ['GEDI01_B', 'GEDI02_A', 'GEDI02_B']
+gedi_versions_list = ['001']
+
+# Options for main menu
+mainMenu_options = [
+        'Update MongoDB GEDI Shots Collection',
+        'Exit system'
+    ]
 
 l1b_filepath = 'C:\\Users\\marcu\\Documents\\iffsc\\gedi_data_ex\\processed_GEDI01_B_2019300171956_O04950_T04703_02_003_01.h5'
 # l1b_filename = 'processed_GEDI01_B_2019288081641_O04758_T01894_02_003_01.h5'
 
-# File indicating region of interest for shot data to be stored into MongoDB
-roi = 'C:\\Users\\marcu\\Documents\\GitHub\\gedi_iffsc\\geo\\sc_b5k_s2k_edit.geojson'
 
 
+def update_db_files(usr_option):
+    
+    # Path to folder keeping GEDI files downloaded from the EarthData Server
+    path = localStorage + os.sep + usr_option + os.sep
 
+    # Retrieve all paths to files in local storage
+    all_filePaths = glob(path + '*.h5')
 
-def process_l1b_beam_v2(l1b_h5, beam, l1b_filename):
-
-    # Retrieve number of shots within a given GEDI Beam
-    num_shots = len(l1b_h5[beam + "/shot_number"])
-
-    # Define number of rounds
-    if num_shots // 1000 < 1:
-        num_rounds = 1
-    elif num_shots % 1000 > 0:
-        num_rounds = num_shots // 1000 + 1
+    if len(all_filePaths) == 0:
+        print('\n' + strings.colors(f'No {usr_option} files were found!', 1) + '\n')
     else:
-        num_rounds = num_shots // 1000
 
-    # Creating begin and end indexes for the batch runs
-    indexes = [[i*1000, i*1000 + 999] for i in list(range(num_rounds))]
+        # Check if log of processed files exists into mongodb
 
-    # Adjusting last index to number of shots in the beam
-    if indexes[-1][1] >= num_shots:
-        indexes[-1][1] = num_shots - 1
-
-    # Process batches of GEDI Shots
-    for begin_index, end_index in indexes:
+        if not exists:
+            ###
         
-        print(
-            '\n\nStoring shots {} to {} [{} total] from {} [file = {}]'.format(
-                begin_index, end_index, num_shots, beam, l1b_filename
-                )
-            )
-        
-        # Retrieve shot data
-        print('> Retrieving and structuring data ...')
-        shots = process_l1b_shot_v2(
-            begin_index, end_index, beam, l1b_filename, l1b_h5
-            )
-
-        # Store data into MongoDB
-        print('> Storing data into MongoDB ...', end = '')
-        if len(shots) > 0:
-            with pymongo.mongo_client.MongoClient() as mongo:
-                db = mongo.get_database("gedi_test_2")
-                db['shots'].insert_many(shots)
-        
-
-
-
-
-def process_l1b_shot_v2(begin_index, end_index, beam, l1b_filename, l1b_h5):
-    
-    doc_list = []
-
-    for shot_index in list(range(begin_index, end_index + 1)):
-
-        # Create Shapely Point to check if shot is within ROI area
-        shot_geoLocation = Point(
-            l1b_h5[beam + "/geolocation/latitude_bin0"][shot_index],
-            l1b_h5[beam + "/geolocation/longitude_bin0"][shot_index]
-            )
-
-        # Check if the shot is within ROI.
-        # If True store data otherwise move to next shot
-        if shot_geoLocation.within(roi_poly) is True:
-
-            # Extracting info to populate shot dictionary to mongodb
-            # 
-            # Info on date of acquisition
-            d_iso = datetime.strptime(l1b_filename[21:26], '%y%j')
-            d_str = str(d_iso.year) + str(d_iso.month).zfill(2) + str(d_iso.day).zfill(2) 
-            #
-            # Info on orbit, track, beam id and shot number
-            orbit = l1b_filename[33:39]
-            track = l1b_filename[40:46]
-            shot_number = str(l1b_h5[beam + "/shot_number"][shot_index])
-            beam_id = bin(l1b_h5[beam + "/beam"][0])[2:].zfill(4)
-            #
-            # Info on waveform measurements
-            startIndex = l1b_h5[beam + "/rx_sample_start_index"][shot_index]
-            sample_count = l1b_h5[beam + "/rx_sample_count"][shot_index]
-            samples = list(l1b_h5[beam + "/rxwaveform"][int(startIndex-1):int(startIndex-1)+sample_count])
-            samples = [str(n) for n in samples]
-
-            # Building dictionary to store shot data into MongoDB
-            shot = {
-                "uniqueID": '_'.join([d_str, orbit, track, beam_id, shot_number]),
-                "beam": beam_id,
-                "beam_type": l1b_h5[beam].attrs["description"],
-                "date_acquire": d_iso,
-                "orbit": orbit,
-                "track": track,
-                "shot_number": shot_number,
-                "files_origin": [l1b_filename],
-                "TanDEM_X_elevation": str(l1b_h5[beam + "/geolocation/digital_elevation_model"][shot_index]),
-                "location": {
-                    "type": "Point",
-                    "coordinates": [
-                        l1b_h5[beam + "/geolocation/longitude_bin0"][shot_index],
-                        l1b_h5[beam + "/geolocation/latitude_bin0"][shot_index]
-                        ]
-                },
-                "GEDI_L1B": {
-                    "rx_sample_count": str(sample_count),
-                    "rx_sample_start_index": str(startIndex),
-                    "rxwaveform": samples,
-                    "stale_return_flag": str(l1b_h5[beam + "/stale_return_flag"][shot_index]),
-                    "degrade": str(l1b_h5[beam + "/geolocation/degrade"][shot_index]),
-                    "elevation_bin0": str(l1b_h5[beam + "/geolocation/elevation_bin0"][shot_index]),
-                    "elevation_bin0_error": str(l1b_h5[beam + "/geolocation/elevation_bin0_error"][shot_index]),
-                    "elevation_lastbin": str(l1b_h5[beam + "/geolocation/elevation_lastbin"][shot_index]),
-                    "elevation_lastbin_error": str(l1b_h5[beam + "/geolocation/elevation_lastbin_error"][shot_index]),
-                    "latitude_bin0_error": str(l1b_h5[beam + "/geolocation/latitude_bin0_error"][shot_index]),
-                    "longitude_bin0_error": str(l1b_h5[beam + "/geolocation/longitude_bin0_error"][shot_index]),
-                    "surface_type": [
-                        str(l1b_h5[beam + "/geolocation/surface_type"][i][shot_index]) for i in list(range(5))
-                        ]
-                }
-
-            }
-
-            # Appending found shot to list
-            doc_list.append(shot)
-    
-    # Return results
-    return doc_list
-        
-
-
-
-def singlePol_from_singlePolQGISGeoJSON(geo_filepath):
-    
-    # Open GeoJSON file
-    with open(geo_filepath) as f:
-        gj = geojson.load(f)
-
-    # Subset info of interest
-    coords = gj['features'][0]['geometry']['coordinates'][0]
-
-    # Return shapely polygon
-    return Polygon([tuple([pair[1], pair[0]]) for pair in coords])
-
-
-def process_l1b_shot(shot_index, beam, l1b_filename, l1b_h5, num_shots):
-
-    # CHECK IF SHOTS IS WITHIN ROI PRIOR TO INSERT IT INTO MONGODB !!!
-
-    # Create Shapely Point to check if shot is within ROI area
-    shot_geoLocation = Point(
-        l1b_h5[beam + "/geolocation/latitude_bin0"][shot_index],
-        l1b_h5[beam + "/geolocation/longitude_bin0"][shot_index]
-        )
-
-    # Check if the shot is within ROI.
-    # If True store data otherwise move to next shot
-    if shot_geoLocation.within(roi_poly) is True:
-        
-        # Extracting info to populate shot dictionary to mongodb
-        # 
-        # Info on date of acquisition
-        d_iso = datetime.strptime(l1b_filename[21:26], '%y%j')
-        d_str = str(d_iso.year) + str(d_iso.month).zfill(2) + str(d_iso.day).zfill(2) 
-        #
-        # Info on orbit, track, beam id and shot number
-        orbit = l1b_filename[33:39]
-        track = l1b_filename[40:46]
-        shot_number = str(l1b_h5[beam + "/shot_number"][shot_index])
-        beam_id = bin(l1b_h5[beam + "/beam"][0])[2:].zfill(4)
-        #
-        # Info on waveform measurements
-        startIndex = l1b_h5[beam + "/rx_sample_start_index"][shot_index]
-        sample_count = l1b_h5[beam + "/rx_sample_count"][shot_index]
-        samples = list(l1b_h5[beam + "/rxwaveform"][int(startIndex-1):int(startIndex-1)+sample_count])
-        samples = [str(n) for n in samples]
-
-        print(f'Inserting Shot {shot_number} [{shot_index}/{num_shots}] of {beam}', end='')
-
-        # Building dictionary to store shot data into MongoDB
-        shot = {
-            "uniqueID": '_'.join([d_str, orbit, track, beam_id, shot_number]),
-            "beam": beam_id,
-            "beam_type": l1b_h5[beam].attrs["description"],
-            "date_acquire": d_iso,
-            "orbit": orbit,
-            "track": track,
-            "shot_number": shot_number,
-            "files_origin": [l1b_filename],
-            "TanDEM_X_elevation": str(l1b_h5[beam + "/geolocation/digital_elevation_model"][shot_index]),
-            "location": {
-                "type": "Point",
-                "coordinates": [
-                    l1b_h5[beam + "/geolocation/longitude_bin0"][shot_index],
-                    l1b_h5[beam + "/geolocation/latitude_bin0"][shot_index]
-                    ]
-            },
-            "GEDI_L1B": {
-                "rx_sample_count": str(sample_count),
-                "rx_sample_start_index": str(startIndex),
-                "rxwaveform": samples,
-                "stale_return_flag": str(l1b_h5[beam + "/stale_return_flag"][shot_index]),
-                "degrade": str(l1b_h5[beam + "/geolocation/degrade"][shot_index]),
-                "elevation_bin0": str(l1b_h5[beam + "/geolocation/elevation_bin0"][shot_index]),
-                "elevation_bin0_error": str(l1b_h5[beam + "/geolocation/elevation_bin0_error"][shot_index]),
-                "elevation_lastbin": str(l1b_h5[beam + "/geolocation/elevation_lastbin"][shot_index]),
-                "elevation_lastbin_error": str(l1b_h5[beam + "/geolocation/elevation_lastbin_error"][shot_index]),
-                "latitude_bin0_error": str(l1b_h5[beam + "/geolocation/latitude_bin0_error"][shot_index]),
-                "longitude_bin0_error": str(l1b_h5[beam + "/geolocation/longitude_bin0_error"][shot_index]),
-                "surface_type": [
-                    str(l1b_h5[beam + "/geolocation/surface_type"][i][shot_index]) for i in list(range(5))
-                    ]
-            }
-
-        }
-
-        # Storing data into MongoDB
+        # Check if any of the files has already been processed
         with pymongo.mongo_client.MongoClient() as mongo:
-            db = mongo.get_database("gedi_test")
-            db['shots'].insert_one(shot)
-        
-        print('... OK')
-    else:
+            db = mongo.get_database('gedi_test_2')
+            processd_files = db['files_processed'].find_one()[usr_option]        
+    
+
+
+def select_product_to_update():
+    
+    # Initializing message
+    print('\n> Which product do you want to update?!\n')
+    
+    # Print options of products to update 
+    for pos, options in enumerate(gedi_products_list):
         print(
-            'Shot {} [{}/{}]does not fall into ROI ... Moving on ...'.format(
-                str(l1b_h5[beam + "/shot_number"][shot_index]),
-                shot_index,
-                num_shots
-                )
-            )
+            '[{}] {}'.format(
+                strings.colors(pos+1, 3), strings.colors(options, 2)
+            ),'\n'
+        )
     
-    
-def process_l1b_beam(l1b_h5, beam, l1b_filename):
-    
-    # Retrieve number of shots within a given GEDI Beam
-    num_shots = len(l1b_h5[beam + "/shot_number"])
+    # Identifying next action
+    usr_option = numbers.readOption(
+        'Select an option: ', 
+        len(gedi_products_list)
+    )
 
-    # Retrieve and store shot data into MongoDB Database
-    for shot_index in list(range(num_shots)):
-        process_l1b_shot(shot_index, beam, l1b_filename, l1b_h5, num_shots)
+    # Call function to update MongoDB documents
+    update_db_files(gedi_products_list[usr_option-1])
 
+    # Return to main Menu
+    print('\n >> Returning to main menu ...\n\n')
 
-def process_l1b_file(l1b_filepath):
-
-    # Read HDF5 File
-    l1b_h5 = h5py.File(l1b_filepath, 'r')  # 'r' <-- read-only mode
-
-    # Find BEAMS nomenclature
-    beam_list = [l for l in l1b_h5.keys() if l.startswith('BEAM')]
-
-    # Process each L1B Beam
-    for beam in beam_list:
-        process_l1b_beam_v2(l1b_h5, beam, os.path.basename(l1b_filepath))
 
 if __name__ == '__main__':
+
+    # Print greetings message
+    strings.greeting_gedi2mongo()
+
+    while True:
+        # Initializing message
+        print('> Main Menu:\n')
+
+        # Print options of actions for the user to select 
+        for pos, options in enumerate(mainMenu_options):
+            print(
+                '[{}] {}'.format(
+                    strings.colors(pos+1, 3), strings.colors(options, 2)
+                ),'\n'
+            )
     
-    # Load Bound limits to shots to be inserted into MongoDB
-    roi_poly = singlePol_from_singlePolQGISGeoJSON(roi)
-
-    # Start processing L1B Files
-    process_l1b_file(l1b_filepath)
-
-
-
-# ---- Example of gedi shots
-
-# {
-
-#     # uniqueID = date_orbit_track_beam_shotNumber
-#     "uniqueID": "20191015_O04758_T01894_0000_3121435",
-#     "beam": "0000",
-#     "beam_type": "Coverage Laser",
-#     "date": "2019-10-15",
-#     "orbit": "04758",
-#     "track": "01894",
-#     "files_origin": [
-#         "processed_GEDI01_B_2019288081641_O04758_T01894_02_003_01.h5",
-#         "processed_GEDI02_A_2019288081641_O04758_T01894_02_001_01.h5",
-#         "processed_GEDI02_B_2019288081641_O04758_T01894_02_001_01.h5"
-#     ],
-#     "digital_elevetion_model": 200,
-#     "GEDI_L1B":{
-
-#         "rx_sample_count": 200,
-#         "rx_sample_start_index": 20,
-#         "rxwaveform": [1323.31, 123.43, ... , 1323.32, 123.31],
-#         "stale_return_flag": 1,
-#         "degrade": 1,
-#         "elevation_bin0": 210,
-#         "elevation_bin0_error": 1,
-#         "elevation_lastbin": 280,
-#         "elevation_lastbin_error": 1.2,
-#         "latitude_bin0_error": 1.2,
-#         "longitude_bin0_error": 4,
-#         "surface_type": [1, 1, 0, 0, 0]
-
-#     },
-#     "GEDI_L2A":{
-
-#         "elev_highestreturn": 1200,
-#         "elev_lowestmode": 1120,
-#         "elevation_bias_flag": 1,
-#         "quality_flag": 1,
-#         "rh": [rh0, rh1, rh2, ..., rh99, rh100, rh101],
-#         "sensitivity": 95,
-#         "quality_flag_rx_assess": 1,
-#         "rx_assess_flag": 1
-
-#     },
-#     "GEDI_L2B":{
+        # Identifying next action
+        usr_option = numbers.readOption(
+            'Select an option: ', 
+            len(mainMenu_options)
+        ) 
         
-#         "algorithmrun_flag": 1,
-#         "cover": 0.932,
-#         "cover_z": [312, 123, ..., 0, 0],
-#         "fhd_normal": 0.634,
-#         "omega": 1,
-#         "pai": 0.0234,
-#         "pai_z": [0.0234, 0.635, ..., 0, 0],
-#         "pavd_z": [0.0234, 0.635, ..., 0, 0],
-#         "pgap_theta": 0.984,
-#         "pgap_theta_error": 1.34,
-#         "pgap_theta_z": 0.0880,
-#         "l2b_quality_flag": 1,
-#         "rg": 12809.25,
-#         "rhog": 0.4,
-#         "rhog_error": -9999,
-#         "rhov": 0.6,
-#         "rhov_error": -9999,
-#         "rossg": 0.5,
-#         "rv": 55.2853,
-#         "rx_sample_count": 220,
-#         "rx_sample_start_index": 200,
-#         "stale_return_flag": 1,
-#         "surface_flag": 1
+        # Either Update MongoDB or Exit System
+        if usr_option == 1:
+            select_product_to_update()
+        elif usr_option == 2:
+            sys.exit('\n' + strings.colors('Goodbye, see you!', 1) + '\n')
 
-#     },
-#     "location": {type: "Point", "coordinates": [-48.9999, -26.5112]}
-
-# }
-
-
-# {
-
-#     "uniqueID": "20191015_O04758_T01894_0000_3121435",
-#     "beam": "0000",
-#     "beam_type": "Coverage Laser",
-#     "date": "2019-10-15",
-#     "orbit": "04758",
-#     "track": "01894",
-#     "files_origin": [
-#         "processed_GEDI01_B_2019288081641_O04758_T01894_02_003_01.h5",
-#         "processed_GEDI02_A_2019288081641_O04758_T01894_02_001_01.h5",
-#         "processed_GEDI02_B_2019288081641_O04758_T01894_02_001_01.h5"
-#     ],
-#     "digital_elevetion_model": 200,
-#     "GEDI_L1B":{
-
-#         "rx_sample_count": 200,
-#         "rx_sample_start_index": 20,
-#         "rxwaveform": [1323.31, 123.43, 1323.32, 123.31],
-#         "stale_return_flag": 1,
-#         "degrade": 1,
-#         "elevation_bin0": 210,
-#         "elevation_bin0_error": 1,
-#         "elevation_lastbin": 280,
-#         "elevation_lastbin_error": 1.2,
-#         "latitude_bin0_error": 1.2,
-#         "longitude_bin0_error": 4,
-#         "surface_type": [1, 1, 0, 0, 0]
-
-#     },
-#     "GEDI_L2A":{
-
-#         "elev_highestreturn": 1200,
-#         "elev_lowestmode": 1120,
-#         "elevation_bias_flag": 1,
-#         "quality_flag": 1,
-#         "rh": [0, 1, 2, 99, 100, 101],
-#         "sensitivity": 95,
-#         "quality_flag_rx_assess": 1,
-#         "rx_assess_flag": 1
-
-#     },
-#     "GEDI_L2B":{
-        
-#         "algorithmrun_flag": 1,
-#         "cover": 0.932,
-#         "cover_z": [312, 123, 0, 0],
-#         "fhd_normal": 0.634,
-#         "omega": 1,
-#         "pai": 0.0234,
-#         "pai_z": [0.0234, 0.635, 0, 0],
-#         "pavd_z": [0.0234, 0.635, 0, 0],
-#         "pgap_theta": 0.984,
-#         "pgap_theta_error": 1.34,
-#         "pgap_theta_z": 0.0880,
-#         "l2b_quality_flag": 1,
-#         "rg": 12809.25,
-#         "rhog": 0.4,
-#         "rhog_error": -9999,
-#         "rhov": 0.6,
-#         "rhov_error": -9999,
-#         "rossg": 0.5,
-#         "rv": 55.2853,
-#         "rx_sample_count": 220,
-#         "rx_sample_start_index": 200,
-#         "stale_return_flag": 1,
-#         "surface_flag": 1
-
-#     },
-#     "location": {"type": "Point", "coordinates": [-48.9999, -26.5112]}
-
-# }

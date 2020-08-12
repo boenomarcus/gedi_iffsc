@@ -111,7 +111,7 @@ def main():
     # Print options of actions for the user to select 
     for pos, options in enumerate(mainMenu_options):
         print(
-            '{} - {}'.format(
+            '[{}] {}'.format(
                 strings.colors(pos+1, 3), strings.colors(options, 2)
             )
         )
