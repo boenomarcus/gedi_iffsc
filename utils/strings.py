@@ -11,6 +11,14 @@ def colors(txt, color=None, background=None, font=0):
     
     return clr_prefix + str(txt) + '\033[m'
 
+def yes_no_input(txt):
+
+    while True:
+        a = input(txt)
+        if a in 'YyNn':
+            return a
+        print(colors('[ERROR] Confirm or deny [y/n]!', 1))
+
 
 def greeting_gediFinder():
     print('\n' + '-='*30 + '\n' + '-'*60)
