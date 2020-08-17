@@ -1,8 +1,11 @@
 import os, sys, h5py, pymongo, geojson
+from glob import glob
 from datetime import datetime
 from shapely.geometry import Point, Polygon
-from utils import strings, numbers, config
+from utils import strings, numbers, config, geoTasks
 
+# Get ROI Shapely Polygon 
+roi_poly = geoTasks.shapelyPol_from_GeoJSONSinglePol(config.roiPath)
 
 def update_db_files(usr_product):
     """
@@ -21,12 +24,14 @@ def update_db_files(usr_product):
 
     # Retrieve all files in local storage
     files = [os.path.basename(f) for f in glob(path + '*.h5')]
-    
+        
     # Continue only if there are files into the folder
     if len(files) == 0:
         print(strings.colors(f'\nNo {usr_product} files were found!\n', 1))
 
     else:
+
+        print(f'\nFiles on local storage: {len(files)}')
 
         # Empty list to store files to process
         files_to_process = []
@@ -62,29 +67,56 @@ def update_db_files(usr_product):
                     # If there are no log, process all files
                     files_to_process.extend(files_v)
         
+        print(
+            'Files already processed: {}'.format(
+                len(files) - len(files_to_process)
+                )
+            )
+        print(
+            'Files to process: {}'.format(
+                len(files_to_process)
+                )
+            )
+
         # Function calls to process files and update log
         for gedi_file in files_to_process:
 
             # Processing file
-            print(f'\nProcessing file {gedi_file}...\n')
+            print(
+                strings.colors(
+                    f'\nProcessing file {gedi_file}...\n',
+                    2
+                    )
+                )
             process_gedi_file(path + gedi_file, usr_product)
-            print(f'\nFile {gedi_file} successfully processed...\n')
+            print(
+                strings.colors(
+                    f'\nFile {gedi_file} successfully processed...\n',
+                    2
+                    )
+                )
 
             # Update process log
             with pymongo.mongo_client.MongoClient() as mongo:
-                        
+                
                 # Get DB
-                db = mongo.get_database(
-                    config.base_mongodb + '_v' + gedi_file[-5:-3]
-                    )
+                db_name = config.base_mongodb + '_v' + gedi_file[-5:-3]
+                db = mongo.get_database(db_name)
+                
+                # Check if DB exists
+                db_list = mongo.list_database_names()
 
-                # Update document      
-                db['files_processed'].find_one_and_update(
-                    {}, # empty to update the first doc in the collection
-                    {"$push": {usr_product: gedi_file}}
-                    )
-
-
+                if db_name in db_list:
+                    # Update document      
+                    db['files_processed'].find_one_and_update(
+                        {}, # empty to update the first doc in the collection
+                        {"$push": {usr_product: gedi_file}}
+                        )
+                else:
+                    # Create document
+                    db['files_processed'].insert_one({usr_product: [gedi_file]})
+                
+                
 def select_product_to_update():
     """
     > select_product_to_update()
@@ -148,19 +180,18 @@ def select_version_to_update():
 
     return config.gedi_versions[usr_option-1]
 
-
-def process_l1b_beam(l1b_h5, beam, l1b_filename):
+def process_l2a_beam(l2a_h5, beam, l2a_filename):
     """
-    > process_l1b_beam(l1b_h5, beam, l1b_filename)
-        Function to process GEDI01_B BEAMs and update shot data.
+    > process_l2a_beam(l2a_h5, beam, l2a_filename)
+        Function to process GEDI02_A BEAMs and update shot data.
         BEAMs are batch processed, meaning that up to a 1000 GEDI shots
-        are stored into MongoDB per round. If a certain BEAMS has 2500 shots, 
+        are updated into MongoDB per round. If a certain BEAMS has 2500 shots, 
         three rounds will be performed.
 
     > Arguments:
-        - l1b_h5: h5py.File() connection to GEDI01_B HDF5 file;
+        - l2a_h5: h5py.File() connection to GEDI02_A HDF5 file;
         - beam: GEDI BEAM (BEAM0000, BEAM0001, ...);
-        - l1b_filename: GEDI01_B HDF5 file basename.
+        - l2a_filename: GEDI02_A HDF5 file basename.
     
     > Output:
         - No outputs (function leads to MongoDB update).
@@ -191,19 +222,133 @@ def process_l1b_beam(l1b_h5, beam, l1b_filename):
     for begin_index, end_index in indexes:
         
         print(
-            '\n\nStoring shots {} to {} [{} total] from {} [file = {}]'.format(
-                begin_index, end_index, num_shots-1, beam, l1b_filename
+            '   > Updating shots {} to {} [{} total] ...'.format(
+                begin_index, end_index, num_shots-1
+                )
+            )
+        
+        # Update shot data
+        process_l2a_shots(
+            begin_index, end_index, beam, l1b_filename, l1b_h5
+            )
+
+
+def process_l2a_shots(begin_index, end_index, beam, l2a_filename, l2a_h5):
+    """
+    > process_l2a_shots(begin_index, end_index, beam, l1b_filename, l1b_h5)
+        Function to process GEDI01_B BEAMs and update shot data.
+        BEAMs are batch processed, meaning that up to a 1000 GEDI shots
+        are stored into MongoDB per round. If a certain BEAMS has 2500 shots, 
+        three rounds will be performed.
+
+    > Arguments:
+        - begin_index: Index of the first shot to collect;
+        - end_index: Index of the last shot to collect;
+        - beam: GEDI BEAM (BEAM0000, BEAM0001, ...);
+        - l2a_filename: GEDI02_A HDF5 file basename;
+        - l2a_h5: h5py.File() connection to GEDI01_B HDF5 file.
+    
+    > Output:
+        - List of dictionaries containing shot data.
+    """
+    
+    with pymongo.mongo_client.MongoClient() as mongo:
+                
+        # Get DB
+        db = mongo.get_database(
+            config.base_mongodb + '_v' + l1b_filename[-5:-3]
+            )
+
+        # Initialize bulk operation
+        bulk = db['shots'].initialize_ordered_bulk_op()
+            
+        # Iterate upon shot indexes
+        for shot_index in list(range(begin_index, end_index + 1)):
+
+            # Build uniqueID field to create query
+            # 
+            # Info on date of acquisition
+            d_iso = datetime.strptime(l2a_filename[21:26], '%y%j')
+            d_str = str(d_iso.year) + str(d_iso.month).zfill(2) + str(d_iso.day).zfill(2) 
+            #
+            # Info on orbit, track, beam id and shot number
+            orbit = l2a_filename[33:39]
+            track = l2a_filename[40:46]
+            shot_number = str(l2a_h5[beam + "/shot_number"][shot_index])
+            beam_id = bin(l2a_h5[beam + "/beam"][0])[2:].zfill(4)
+
+            # Create query
+
+            bulk.find(
+                {"uniqueID": '_'.join([d_str, orbit, track, beam_id, shot_number])}
+                ).update(
+                    {'$set': {
+                        "l2a": True,
+                        "l2a_quality_flag": l2a_h5[beam + "/quality_flag"],
+                        "sensitivity": l2a_h5[beam + "/sensitivity"],
+                        "elev_highestreturn": l2a_h5[beam + "/elev_highestreturn"]
+                        }}
+                    )
+        
+        # Execute bulk update
+        bulk.execute()
+
+
+def process_l1b_beam(l1b_h5, num_beams, beam_i, beam, l1b_filename):
+    """
+    > process_l1b_beam(l1b_h5, beam, l1b_filename)
+        Function to process GEDI01_B BEAMs and update shot data.
+        BEAMs are batch processed, meaning that up to a 1000 GEDI shots
+        are stored into MongoDB per round. If a certain BEAMS has 2500 shots, 
+        three rounds will be performed.
+
+    > Arguments:
+        - l1b_h5: h5py.File() connection to GEDI01_B HDF5 file;
+        - num_beams: Number of GEDI BEAMs;
+        - beam_i: BEAM index;
+        - beam: GEDI BEAM (BEAM0000, BEAM0001, ...);
+        - l1b_filename: GEDI01_B HDF5 file basename.
+    
+    > Output:
+        - No outputs (function leads to MongoDB update).
+    """
+    print(f'  > {beam} [{beam_i+1}/{num_beams}]')
+    # Retrieve number of shots within a given GEDI Beam
+    num_shots = len(l1b_h5[beam + "/shot_number"])
+
+    # Define number of rounds
+    if num_shots // 1000 < 1:
+        num_rounds = 1
+    elif num_shots % 1000 > 0:
+        num_rounds = num_shots // 1000 + 1
+    else:
+        num_rounds = num_shots // 1000
+
+    # Creating begin and end indexes for the batch rounds
+    indexes = [[i*1000, i*1000 + 999] for i in list(range(num_rounds))]
+
+    # Adjusting last index to number of shots in the beam
+    if indexes[-1][1] >= num_shots:
+        indexes[-1][1] = num_shots - 1
+    
+    # GEDI Version
+    version = l1b_filename[-5:-3]
+
+    # Process batches of GEDI Shots
+    for begin_index, end_index in indexes:
+        
+        print(
+            '    > Storing shots {} to {} [{} total] ...'.format(
+                begin_index, end_index, num_shots-1
                 )
             )
         
         # Retrieve shot data
-        print('> Retrieving and structuring data ...')
         shots = process_l1b_shots(
             begin_index, end_index, beam, l1b_filename, l1b_h5
             )
 
         # Store data into MongoDB
-        print('> Storing data into MongoDB ...', end = '')
         if len(shots) > 0:
             with pymongo.mongo_client.MongoClient() as mongo:
                 
@@ -216,13 +361,29 @@ def process_l1b_beam(l1b_h5, beam, l1b_filename):
                 db['shots'].insert_many(shots)
 
 
-
-        
-
 def process_l1b_shots(begin_index, end_index, beam, l1b_filename, l1b_h5):
+    """
+    > process_l1b_shots(begin_index, end_index, beam, l1b_filename, l1b_h5)
+        Function to process GEDI01_B BEAMs and update shot data.
+        BEAMs are batch processed, meaning that up to a 1000 GEDI shots
+        are stored into MongoDB per round. If a certain BEAMS has 2500 shots, 
+        three rounds will be performed.
+
+    > Arguments:
+        - begin_index: Index of the first shot to collect;
+        - end_index: Index of the last shot to collect;
+        - beam: GEDI BEAM (BEAM0000, BEAM0001, ...);
+        - l1b_filename: GEDI01_B HDF5 file basename;
+        - l1b_h5: h5py.File() connection to GEDI01_B HDF5 file.
     
+    > Output:
+        - List of dictionaries containing shot data.
+    """
+
+    # Create empty list to store data
     doc_list = []
 
+    # Iterate upon shot indexes
     for shot_index in list(range(begin_index, end_index + 1)):
 
         # Create Shapely Point to check if shot is within ROI area
@@ -248,10 +409,10 @@ def process_l1b_shots(begin_index, end_index, beam, l1b_filename, l1b_h5):
             beam_id = bin(l1b_h5[beam + "/beam"][0])[2:].zfill(4)
             #
             # Info on waveform measurements
-            startIndex = l1b_h5[beam + "/rx_sample_start_index"][shot_index]
-            sample_count = l1b_h5[beam + "/rx_sample_count"][shot_index]
-            samples = list(l1b_h5[beam + "/rxwaveform"][int(startIndex-1):int(startIndex-1)+sample_count])
-            samples = [str(n) for n in samples]
+            #startIndex = l1b_h5[beam + "/rx_sample_start_index"][shot_index]
+            #sample_count = l1b_h5[beam + "/rx_sample_count"][shot_index]
+            #samples = list(l1b_h5[beam + "/rxwaveform"][int(startIndex-1):int(startIndex-1)+sample_count])
+            #samples = [str(n) for n in samples]
 
             # Building dictionary to store shot data into MongoDB
             shot = {
@@ -260,6 +421,8 @@ def process_l1b_shots(begin_index, end_index, beam, l1b_filename, l1b_h5):
                 "beam_type": l1b_h5[beam].attrs["description"],
                 "date_acquire": d_iso,
                 "shot_number": shot_number,
+                "stale_return_flag": str(l1b_h5[beam + "/stale_return_flag"][shot_index]),
+                "degrade": str(l1b_h5[beam + "/geolocation/degrade"][shot_index]),
                 "files_origin": [l1b_filename],
                 "TanDEM_X_elevation": str(l1b_h5[beam + "/geolocation/digital_elevation_model"][shot_index]),
                 "location": {
@@ -276,21 +439,6 @@ def process_l1b_shots(begin_index, end_index, beam, l1b_filename, l1b_h5):
     
     # Return results
     return doc_list
-        
-
-
-
-def shapelyPol_from_GeoJSONSinglePol(geo_filepath):
-    
-    # Open GeoJSON file
-    with open(geo_filepath) as f:
-        gj = geojson.load(f)
-
-    # Subset info of interest
-    coords = gj['features'][0]['geometry']['coordinates'][0]
-
-    # Return shapely polygon
-    return Polygon([tuple([pair[1], pair[0]]) for pair in coords])
 
 
 def process_gedi_file(filepath, gedi_level):
@@ -314,9 +462,10 @@ def process_gedi_file(filepath, gedi_level):
 
     # Process GEDI BEAMs
     if gedi_level == 'GEDI01_B':
-        for beam in beam_list:
-            process_l1b_beam(gedi_h5, beam, os.path.basename(filepath))
+        for beam_i, beam in enumerate(beam_list):
+            process_l1b_beam(gedi_h5, len(beam_list), beam_i, beam, os.path.basename(filepath))
     
     else:
         for beam in beam_list:
             process_l2a_2b_beam(gedi_h5, beam, os.path.basename(filepath))
+
