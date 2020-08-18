@@ -34,7 +34,7 @@ class GEDI_request(object):
 
 class GEDI_Shots():
     """
-    class to process gedi shots and store data into mongodb
+    Class to process gedi shots and store data into mongodb
     """
 
     def __init__(self, path, l1b, l2a, l2b, vers, strMatch, beams, db, extent):
@@ -47,6 +47,7 @@ class GEDI_Shots():
         self.beams = beams
         self.db = db
         self.extent = extent
+    
     
     def update_process_log(self):
         """
