@@ -13,3 +13,7 @@ roiPath = 'C:\\Users\\marcu\\gedi_files\\GEO\\sc_b5k_s2k_edit.geojson'
 # Available GEDI products and versions
 gedi_products = ['GEDI01_B', 'GEDI02_A', 'GEDI02_B']
 gedi_versions = ['001']
+beam_list = [
+    'BEAM0000', 'BEAM0001', 'BEAM0010', 'BEAM0011', 
+    'BEAM0101', 'BEAM0110', 'BEAM1000', 'BEAM1011'
+    ]
