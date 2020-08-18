@@ -52,16 +52,22 @@ def update_db_files(usr_product):
                 
                 # Get list of files to process
 
-                # Test wheter log exists or not
+                # Test whether log exists or not
                 if 'files_processed' in db.list_collection_names():
                     
-                    # Retrieve processed files
+                    # Retrieve doc cointaining processed files
                     processed_files = db['files_processed'].find_one()
                     
-                    # Get lits of unprocessed files
-                    files_to_process.extend(
-                        list(set(files_v) - set(processed_files[usr_product]))
-                        ) 
+                    if usr_product in list(processed_files.keys()):
+                                            
+                        # Get lits of unprocessed files
+                        files_to_process.extend(
+                            list(set(files_v) - set(processed_files[usr_product]))
+                        )
+                    else:
+                        # Case when L1B exists, but not L2A and L2B
+                        # Get lits of unprocessed files
+                        files_to_process.extend(files_v)
                 else:
 
                     # If there are no log, process all files
@@ -180,7 +186,7 @@ def select_version_to_update():
 
     return config.gedi_versions[usr_option-1]
 
-def process_l2a_beam(l2a_h5, beam, l2a_filename):
+def process_l2a_l2b_beam(l2a_h5, num_beams, beam_i, beam, l2a_filename, usr_product):
     """
     > process_l2a_beam(l2a_h5, beam, l2a_filename)
         Function to process GEDI02_A BEAMs and update shot data.
@@ -190,15 +196,18 @@ def process_l2a_beam(l2a_h5, beam, l2a_filename):
 
     > Arguments:
         - l2a_h5: h5py.File() connection to GEDI02_A HDF5 file;
+        - num_beams: Number of GEDI BEAMs;
+        - beam_i: BEAM index;
         - beam: GEDI BEAM (BEAM0000, BEAM0001, ...);
-        - l2a_filename: GEDI02_A HDF5 file basename.
+        - l2a_filename: GEDI02_A HDF5 file basename;
+        - usr_product: GEDI Product Level (GEDI01_B, GEDI02_A or GEDI02_B).
     
     > Output:
         - No outputs (function leads to MongoDB update).
     """
-
+    print(f'  > {beam} [{beam_i+1}/{num_beams}]')
     # Retrieve number of shots within a given GEDI Beam
-    num_shots = len(l1b_h5[beam + "/shot_number"])
+    num_shots = len(l2a_h5[beam + "/shot_number"])
 
     # Define number of rounds
     if num_shots // 1000 < 1:
@@ -216,7 +225,7 @@ def process_l2a_beam(l2a_h5, beam, l2a_filename):
         indexes[-1][1] = num_shots - 1
     
     # GEDI Version
-    version = l1b_filename[-5:-3]
+    version = l2a_filename[-5:-3]
 
     # Process batches of GEDI Shots
     for begin_index, end_index in indexes:
@@ -228,12 +237,12 @@ def process_l2a_beam(l2a_h5, beam, l2a_filename):
             )
         
         # Update shot data
-        process_l2a_shots(
-            begin_index, end_index, beam, l1b_filename, l1b_h5
+        process_l2a_l2b_shots(
+            begin_index, end_index, beam, l2a_filename, l2a_h5, usr_product
             )
 
 
-def process_l2a_shots(begin_index, end_index, beam, l2a_filename, l2a_h5):
+def process_l2a_l2b_shots(begin_index, end_index, beam, l2_filename, l2_h5, usr_product):
     """
     > process_l2a_shots(begin_index, end_index, beam, l1b_filename, l1b_h5)
         Function to process GEDI01_B BEAMs and update shot data.
@@ -245,8 +254,9 @@ def process_l2a_shots(begin_index, end_index, beam, l2a_filename, l2a_h5):
         - begin_index: Index of the first shot to collect;
         - end_index: Index of the last shot to collect;
         - beam: GEDI BEAM (BEAM0000, BEAM0001, ...);
-        - l2a_filename: GEDI02_A HDF5 file basename;
-        - l2a_h5: h5py.File() connection to GEDI01_B HDF5 file.
+        - l2_filename: GEDI02 HDF5 file basename;
+        - l2_h5: h5py.File() connection to GEDI02 HDF5 file;
+        - usr_product: GEDI Product Level (GEDI01_B, GEDI02_A or GEDI02_B).
     
     > Output:
         - List of dictionaries containing shot data.
@@ -256,7 +266,7 @@ def process_l2a_shots(begin_index, end_index, beam, l2a_filename, l2a_h5):
                 
         # Get DB
         db = mongo.get_database(
-            config.base_mongodb + '_v' + l1b_filename[-5:-3]
+            config.base_mongodb + '_v' + l2_filename[-5:-3]
             )
 
         # Initialize bulk operation
@@ -268,26 +278,44 @@ def process_l2a_shots(begin_index, end_index, beam, l2a_filename, l2a_h5):
             # Build uniqueID field to create query
             # 
             # Info on date of acquisition
-            d_iso = datetime.strptime(l2a_filename[21:26], '%y%j')
+            d_iso = datetime.strptime(l2_filename[21:26], '%y%j')
             d_str = str(d_iso.year) + str(d_iso.month).zfill(2) + str(d_iso.day).zfill(2) 
             #
             # Info on orbit, track, beam id and shot number
-            orbit = l2a_filename[33:39]
-            track = l2a_filename[40:46]
-            shot_number = str(l2a_h5[beam + "/shot_number"][shot_index])
-            beam_id = bin(l2a_h5[beam + "/beam"][0])[2:].zfill(4)
+            orbit = l2_filename[33:39]
+            track = l2_filename[40:46]
+            shot_number = str(l2_h5[beam + "/shot_number"][shot_index])
+            beam_id = bin(l2_h5[beam + "/beam"][0])[2:].zfill(4)
 
-            # Create query
-
-            bulk.find(
-                {"uniqueID": '_'.join([d_str, orbit, track, beam_id, shot_number])}
+            if usr_product == 'GEDI02_A':
+                # Create query
+                bulk.find(
+                    {"uniqueID": '_'.join([d_str, orbit, track, beam_id, shot_number])}
                 ).update(
                     {'$set': {
                         "l2a": True,
-                        "l2a_quality_flag": l2a_h5[beam + "/quality_flag"],
-                        "sensitivity": l2a_h5[beam + "/sensitivity"],
-                        "elev_highestreturn": l2a_h5[beam + "/elev_highestreturn"]
-                        }}
+                        "l2a_quality_flag": str(l2_h5[beam + "/quality_flag"][shot_index]),
+                        "sensitivity": str(l2_h5[beam + "/sensitivity"][shot_index]),
+                        "elev_highestreturn": str(l2_h5[beam + "/elev_highestreturn"][shot_index])
+                        },
+                    "$push": {
+                        "files_origin": [l2_filename]
+                    }
+                        }
+                    )
+            else:
+                    # Create query
+                bulk.find(
+                    {"uniqueID": '_'.join([d_str, orbit, track, beam_id, shot_number])}
+                ).update(
+                    {'$set': {
+                        "l2b": True,
+                        "l2b_quality_flag": str(l2_h5[beam + "/l2b_quality_flag"][shot_index])
+                        },
+                    "$push": {
+                        "files_origin": [l2_filename]
+                    }
+                        }
                     )
         
         # Execute bulk update
@@ -425,6 +453,8 @@ def process_l1b_shots(begin_index, end_index, beam, l1b_filename, l1b_h5):
                 "degrade": str(l1b_h5[beam + "/geolocation/degrade"][shot_index]),
                 "files_origin": [l1b_filename],
                 "TanDEM_X_elevation": str(l1b_h5[beam + "/geolocation/digital_elevation_model"][shot_index]),
+                "l2a": False,
+                "l2b": False,
                 "location": {
                     "type": "Point",
                     "coordinates": [
@@ -463,9 +493,22 @@ def process_gedi_file(filepath, gedi_level):
     # Process GEDI BEAMs
     if gedi_level == 'GEDI01_B':
         for beam_i, beam in enumerate(beam_list):
-            process_l1b_beam(gedi_h5, len(beam_list), beam_i, beam, os.path.basename(filepath))
+            process_l1b_beam(
+                gedi_h5, 
+                len(beam_list), 
+                beam_i, 
+                beam, 
+                os.path.basename(filepath)
+                )
     
     else:
-        for beam in beam_list:
-            process_l2a_2b_beam(gedi_h5, beam, os.path.basename(filepath))
+        for beam_i, beam in enumerate(beam_list):
+            process_l2a_l2b_beam(
+                gedi_h5, 
+                len(beam_list), 
+                beam_i, 
+                beam, 
+                os.path.basename(filepath), 
+                gedi_level
+                )
 
