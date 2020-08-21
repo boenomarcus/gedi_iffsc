@@ -87,7 +87,78 @@ def gedi_finder():
 
 
 def gedi_storer():
-    pass
+    """
+    > gedi_storer()
+        Function to update gedi database on MongoDB.
+
+    > Arguments:
+        - No arguments.
+    
+    > Output:
+        - No outputs (function leads to MongoDB update).
+    """
+
+    # Get local storage files
+    files = gs_get_files()
+
+    # Get gedi versions inside local storage
+    versions = gs_get_versions(files)
+
+    # Get dictionary with files per version and product level
+    files_dict = gs_match_files(files, versions)
+
+    # Get dictionary of files to process
+    final_files, numgranules = gs_files_to_Process(files_dict)
+
+    if numgranules == 0:
+        print(
+            strings.colors(
+                f"\n'{config.base_mongodb}' is already up-to-date!",
+                3
+                )
+            )
+        print("\n" + "- - " * 20 + "\n")
+
+    else:
+
+        # Print number of files to process
+        print(strings.colors(f"\nUpdating {numgranules} GEDI Granules", 2))
+
+        # Get dictionary keys
+        for version in list(final_files.keys()):
+            for match in list(final_files[version].keys()):
+
+                if len(final_files[version][match]) < 3:
+                    print(f"\nDownload all '{match}' Granules to continue!")
+                    print("... Moving to the next GEDI Granule ...\n")
+                else:
+
+                    # Create class instance to process shots
+                    gediShots = gediClasses.GEDI_Shots(
+                        path = config.localStorage,
+                        l1b = final_files[version][match][0],
+                        l2a = final_files[version][match][1],
+                        l2b = final_files[version][match][2],
+                        vers = version,
+                        strMatch = match,
+                        beams = config.beam_list,
+                        db = config.base_mongodb,
+                        extent = roi_poly
+                    )
+
+                    # Process shots and store into MongoDB
+                    gediShots.process_and_store()
+
+                    # Update process log
+                    gediShots.update_process_log()
+        
+        print(
+            strings.colors(
+                f"\n > MongoDB '{config.base_mongodb}' succesfully updated!", 
+                2
+                )
+            )
+        print("\n" + "- - " * 20 + "\n")
 
 
 def gedi_extractor():
@@ -137,7 +208,7 @@ def gf_search(bbox):
     > Output:
         - Text file (.txt) with granules to download from EarthData Search.
     """
-    print('\n ... Delivering GEDI Finder Request to LP_DAAC/NASA Server ...\n')
+    print('\n ... Delivering GEDI Finder Request to LP_DAAC/NASA Server ...')
 
     # Retrieve info on products and versions
     products = config.gedi_products
@@ -166,8 +237,8 @@ def gf_search(bbox):
 
     # Sometimes v02 products are inside v01 products on LP_DAAC/NASA Server
     # so we need to check for this bug 
-    prods_corr = list(set([f[0:8] for f in gedi_granules]))
-    vers_corr = list(set([f[-5:-3] for f in gedi_granules]))
+    prods_corr = sorted(list(set([f[0:8] for f in gedi_granules])))
+    vers_corr = sorted(list(set([f[-5:-3] for f in gedi_granules])))
 
     # Update pv_list with corrected versions
     pv_list = [[prod, version] for prod in prods_corr for version in vers_corr]
@@ -191,14 +262,13 @@ def gf_search(bbox):
         
         # Files to download
         gedi_granules_to_download.append(
-            list(
-                set(gedi_granules_all_files[index]) - set(files_localStorage)
+            sorted(
+                list(
+                    set(gedi_granules_all_files[index]) - set(files_localStorage)
+                )
                 )
             )
     
-    print(gedi_granules_all_files)
-    print(gedi_granules_to_download)
-
     # Create text file with results
     print('\n ... Requested Successfully Completed ...')
     
@@ -212,6 +282,7 @@ def gf_search(bbox):
 
     time.sleep(2)
     print('\n ... Saving GEDI Granules to a text file (".txt") ...')
+    print("\n" + "- - " * 20 + "\n")
 
 
 def gf_write_searchResults(bbox, prodVers_list, full_list, toDownload_list):
@@ -278,81 +349,9 @@ def gf_write_searchResults(bbox, prodVers_list, full_list, toDownload_list):
 # ----- GEDI Storer methods -------------------------------------------------- #
 
 
-def update_gedi_db():
+def gs_get_files(path=config.localStorage):
     """
-    > update_gedi_db()
-        Function to update gedi database on MongoDB.
-
-    > Arguments:
-        - No arguments.
-    
-    > Output:
-        - No outputs (function leads to MongoDB update).
-    """
-
-    # Get local storage files
-    files = get_gedi_files()
-
-    # Get gedi versions inside local storage
-    versions = get_gedi_versions(files)
-
-    # Get dictionary with files per version and product level
-    files_dict = match_gedi_files(files, versions)
-
-    # Get dictionary of files to process
-    final_files, numgranules = gedi_files_to_Process(files_dict)
-
-    if numgranules == 0:
-        print(
-            strings.colors(
-                f"\n'{config.base_mongodb}' is already up-to-date!\n",
-                3
-                )
-            )
-    else:
-
-        # Print number of files to process
-        print(strings.colors(f"\nUpdating {numgranules} GEDI Granules", 2))
-
-        # Get dictionary keys
-        for version in list(final_files.keys()):
-            for match in list(final_files[version].keys()):
-
-                if len(final_files[version][match]) < 3:
-                    print(f"\nDownload all '{match}' Granules to continue!")
-                    print("... Moving to the next GEDI Granule ...\n")
-                else:
-
-                    # Create class instance to process shots
-                    gediShots = classes.GEDI_Shots(
-                        path = config.localStorage,
-                        l1b = final_files[version][match][0],
-                        l2a = final_files[version][match][1],
-                        l2b = final_files[version][match][2],
-                        vers = version,
-                        strMatch = match,
-                        beams = config.beam_list,
-                        db = config.base_mongodb,
-                        extent = roi_poly
-                    )
-
-                    # Process shots and store into MongoDB
-                    gediShots.process_and_store()
-
-                    # Update process log
-                    gediShots.update_process_log()
-        
-        print(
-            strings.colors(
-                f"\n > MongoDB '{config.base_mongodb}' succesfully updated!", 
-                2
-                )
-            )
-
-
-def get_gedi_files(path=config.localStorage):
-    """
-    > get_gedi_files(path=config.localStorage)
+    > gs_get_files(path=config.localStorage)
         Function to get files into local storage (see utils/config.py).
 
     > Arguments:
@@ -379,9 +378,9 @@ def get_gedi_files(path=config.localStorage):
     return files
 
 
-def get_gedi_versions(files):
+def gs_get_versions(files):
     """
-    > get_gedi_versions(files)
+    > gs_get_versions(files)
         Function to get versions of GEDI Granules in local storage.
 
     > Arguments:
@@ -393,9 +392,9 @@ def get_gedi_versions(files):
     return list(set([v[-5:-3] for v in files]))
 
 
-def match_gedi_files(files, versions):
+def gs_match_files(files, versions):
     """
-    > get_gedi_versions(files, versions)
+    > gs_match_files(files, versions)
         Function to get dictionary of matching L1B, L2A and L2B Granules.
 
     > Arguments:
@@ -439,14 +438,14 @@ def match_gedi_files(files, versions):
     return gedi_dict
 
 
-def gedi_files_to_Process(files_dict):
+def gs_files_to_Process(files_dict):
     """
-    > get_gedi_versions(files, versions)
+    > gs_files_to_Process(files_dict)
         Function to get dictionary of GEDI Granules to process.
 
     > Arguments:
         - files_dict: Dictionary of matching granules by version.
-            --> Output from match_gedi_files().
+            --> Output from gs_match_files().
     
     > Output:
         - final_dict: Dictionary of granules to process;
@@ -497,5 +496,6 @@ def gedi_files_to_Process(files_dict):
     
     # Return results
     return final_dict, granules
+
 
 # ----- GEDI Extractor methods ----------------------------------------------- #
