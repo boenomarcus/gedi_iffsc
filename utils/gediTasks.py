@@ -1,9 +1,281 @@
-import os, pymongo
+import os, sys, pymongo, time
 from glob import glob
-from utils import classes, strings, config, geoTasks
+from datetime import datetime
+from utils import classes, strings, numbers, config, geoTasks, gediClasses
 
 # Get ROI Shapely Polygon
 roi_poly = geoTasks.shapelyPol_from_GeoJSONSinglePol(config.roiPath)
+
+
+def gedi_finder():
+    """
+    > gedi_finder()
+        GEDI Finder - Search LP_DAAC/NASA Database for new GEDI Granules.
+
+    > Arguments:
+        - No arguments.
+    
+    > Output:
+        - Text file (.txt) with granules to download from EarthData Search.
+    """
+    while True:
+
+        # GEDI Finder menu
+        gediFinder_Menu = [
+            f"Default Bounding Box ({config.default_bbox})",
+            "New Bounding Box",
+            "Return to Main Menu",
+            "Exit System"
+            ]
+            
+        # Print options of actions for the user to select 
+        print("\n" + "- - " * 20)
+        print("\n> Define Bounding Box for LP_DAAC/NASA search:\n")
+        for pos, options in enumerate(gediFinder_Menu):
+            print(
+                "[{}] {}".format(
+                    strings.colors(pos+1, 3), strings.colors(options, 2)
+                    )
+                )
+            
+        # Identifying next action
+        gf_option = numbers.readOption(
+            "Select an option: ", 
+            len(gediFinder_Menu)
+            )
+
+        if gf_option == 1:
+            # Ask for user confirmation
+            answer = strings.yes_no_input(
+                f"\nConfirm search with default bbox?! [(y)/n] "
+                )
+
+            # Test whether user confirmed search or not             
+            if answer in 'Yy':
+                # Create LP_DAAC/NASA Request with default bbox
+                gf_search(config.default_bbox)
+                break
+            else:
+                print("\n ... Redefining terms of the search ...\n")
+    
+        elif gf_option == 2:
+            # Define bbox
+            usr_bbox = gf_bbox()
+
+            # Ask for user confirmation
+            answer = strings.yes_no_input(
+                f"\nConfirm search with {usr_bbox} bbox?! [(y)/n] "
+                )
+
+            # Test whether user confirmed search or not             
+            if answer in 'Yy':
+                # Create LP_DAAC/NASA Request with default bbox
+                gf_search(usr_bbox)
+                break
+            else:
+                print("\n ... Redefining terms of the search ...\n")   
+               
+        elif gf_option == 3:
+            # Return to Main Menu
+            print("\n >> Returning to Main Menu ...\n")
+            print("\n" + "- - " * 20, "\n")
+            break
+        
+        else:
+            # Exit system with a goodbye message
+            sys.exit("\n" + strings.colors("Goodbye, see you!", 1) + "\n")
+
+
+def gedi_storer():
+    pass
+
+
+def gedi_extractor():
+    pass
+
+
+# ----- GEDI Finder methods -------------------------------------------------- #
+
+def gf_bbox():
+    """
+    > gf_bbox():
+        GEDI Finder method - Create user-define bounding box.
+
+    > Arguments:
+        - No arguments.
+    
+    > Output:
+        - list: bounding box [ul_lat, ul_lon, lr_lat, lr_lon].
+    """
+    while True:
+        print('\n' + '--- Enter Bounding Box Coordinates [WGS84 lat/long]:')
+        coords = [
+            'Upper-Left Latitude: ',
+            'Upper-Left Longitude: ',
+            'Lower-Right Latitude: ',
+            'Lower-Right Longitude: '
+            ]
+        bbox = [
+            numbers.readFloat(strings.colors(coords[i], 2)) for i in range(4)
+        ]
+
+        # Check if it is a valid bounding box
+        if bbox[0] > bbox[2] and bbox[1] < bbox[3]:
+            # Return usr_bbox if it is valid
+            return bbox
+        print(strings.colors('[ERROR] Enter a valid Bounding Box!', 1))
+
+
+def gf_search(bbox):
+    """
+    > gf_bbox():
+        Create a GEDI Finder request.
+
+    > Arguments:
+        - bbox: Bounding Box for LP_DAAC/NASA query.
+    
+    > Output:
+        - Text file (.txt) with granules to download from EarthData Search.
+    """
+    print('\n ... Delivering GEDI Finder Request to LP_DAAC/NASA Server ...\n')
+
+    # Retrieve info on products and versions
+    products = config.gedi_products
+    versions = config.gedi_versions
+
+    # Create list of products and versions
+    pv_list = [[prod, version] for prod in products for version in versions] 
+
+    # Create empty list to store results
+    gedi_granules = []
+
+    # Iterate over list of products and versions
+    for product, version in pv_list:
+        request = gediClasses.GEDI_request(p=product, v=version, bbox=bbox)
+        link_list = request.process_request()
+
+        # Get only filenames, not entire URL
+        link_list = [f[57:] for f in link_list]
+
+        # Update list
+        gedi_granules.extend(link_list)
+    
+    # Create empty list to store results
+    gedi_granules_all_files = []
+    gedi_granules_to_download = []
+
+    # Sometimes v02 products are inside v01 products on LP_DAAC/NASA Server
+    # so we need to check for this bug 
+    prods_corr = list(set([f[0:8] for f in gedi_granules]))
+    vers_corr = list(set([f[-5:-3] for f in gedi_granules]))
+
+    # Update pv_list with corrected versions
+    pv_list = [[prod, version] for prod in prods_corr for version in vers_corr]
+    
+    # Check for products already downloaded
+    for index, item in enumerate(pv_list):
+        
+        # Retrieve files that match product and version
+        beg, end = item[0], item[1] + ".h5"
+        gedi_granules_all_files.append(
+            [f for f in gedi_granules if f.startswith(beg) and f.endswith(end)]
+        )
+
+        # files on storage
+        folder = config.localStorage + os.sep + item[0] + os.sep
+        files_localStorage = [
+            os.path.basename(f)[10:] for f in glob(
+                folder + "*" + item[1] + ".h5"
+                )
+            ]
+        
+        # Files to download
+        gedi_granules_to_download.append(
+            list(
+                set(gedi_granules_all_files[index]) - set(files_localStorage)
+                )
+            )
+    
+    print(gedi_granules_all_files)
+    print(gedi_granules_to_download)
+
+    # Create text file with results
+    print('\n ... Requested Successfully Completed ...')
+    
+    # Save text file with results
+    gf_write_searchResults(
+        bbox=bbox, 
+        prodVers_list=pv_list, 
+        full_list=gedi_granules_all_files, 
+        toDownload_list=gedi_granules_to_download
+        )
+
+    time.sleep(2)
+    print('\n ... Saving GEDI Granules to a text file (".txt") ...')
+
+
+def gf_write_searchResults(bbox, prodVers_list, full_list, toDownload_list):
+    """
+    > gf_write_searhResults(full_list, toDownload_list):
+        Create a GEDI Finder request.
+
+    > Arguments:
+        - bbox: Bounding box defined by the user;
+        - prodVers_list: Nested list indicating GEDI products and versions;
+        - full_list: Nested lists with all matching GEDI Granules;
+        - toDownload_list: Nested lists with GEDI Granules to download.
+    
+    > Output:
+        - No outputs (function leads to writing of text file).
+    """
+
+    # Creating output file name
+    dt = datetime.now()
+    ymd = str(dt.now().year).zfill(4) + str(dt.now().month).zfill(2)
+    ymd += str(dt.now().day).zfill(2)
+    hms = str(dt.now().hour).zfill(2) + str(dt.now().minute).zfill(2)
+    hms += str(dt.second).zfill(2)
+    #
+    out_file = 'gedi_finder_links' + os.sep + "GEDI_" + ymd + '_' + hms
+    out_file += "_bbox_"
+    out_file += '_'.join([str(int(n)) for n in bbox]) + '.txt'
+
+    # Create results directory if it does not exist 
+    if not os.path.exists('gedi_finder_links'):
+        os.makedirs('gedi_finder_links')
+
+    # Save resutls to out_file
+    with open(out_file, 'a+') as f:
+
+        f.write('\n# --- GEDI Finder Results\n')
+        f.write(f'User-defined Bounding Box: {bbox}\n\n')
+        
+        f.write('# --- GRANULES TO DOWNLOAD\n\n')
+        for index, item in enumerate(prodVers_list):
+            f.write(f'\n# - Product: {item[0]} - Version: {item[1]}\n\n')
+            
+            # Writing granules to text file
+            list_lenght = len(toDownload_list[index])
+            for pos, gedi_file in enumerate(toDownload_list[index]):
+                if pos == list_lenght - 1:
+                    f.write(f'{gedi_file}\n')
+                else:
+                    f.write(f'{gedi_file},\n')
+        
+        f.write('\n\n# --- ALL GRANULES\n\n')
+        for index, item in enumerate(prodVers_list):
+            f.write(f'\n# - Product: {item[0]} - Version: {item[1]}\n\n')
+            
+            # Writing granules to text file
+            list_lenght = len(full_list[index])
+            for pos, gedi_file in enumerate(full_list[index]):
+                if pos == list_lenght - 1:
+                    f.write(f'{gedi_file}\n')
+                else:
+                    f.write(f'{gedi_file},\n')
+
+
+# ----- GEDI Storer methods -------------------------------------------------- #
 
 
 def update_gedi_db():
@@ -226,3 +498,4 @@ def gedi_files_to_Process(files_dict):
     # Return results
     return final_dict, granules
 
+# ----- GEDI Extractor methods ----------------------------------------------- #
