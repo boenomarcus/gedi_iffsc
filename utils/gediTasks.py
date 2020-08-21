@@ -1,7 +1,7 @@
 import os, sys, pymongo, time
 from glob import glob
 from datetime import datetime
-from utils import classes, strings, numbers, config, geoTasks, gediClasses
+from utils import strings, numbers, config, geoTasks, gediClasses
 
 # Get ROI Shapely Polygon
 roi_poly = geoTasks.shapelyPol_from_GeoJSONSinglePol(config.roiPath)
