@@ -1,5 +1,7 @@
 import sys
+
 from utils import strings, numbers, gediTasks
+
 
 def gedi_menu():
     """
@@ -72,6 +74,7 @@ def ic1_menu():
     """
     pass
 
+
 def main_menu():
     """
     > main_menu()
@@ -125,6 +128,7 @@ def main_menu():
         else:
             # Exit system with a goodbye message
             sys.exit("\n" + strings.colors("Goodbye, see you!", 1) + "\n")
+
 
 if __name__ == "__main__":
     

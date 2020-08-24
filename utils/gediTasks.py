@@ -1,4 +1,8 @@
-import os, sys, pymongo, time
+import os
+import sys
+import pymongo
+import time
+
 from glob import glob
 from datetime import datetime
 from utils import strings, numbers, config, geoTasks, gediClasses
@@ -51,7 +55,7 @@ def gedi_finder():
                 )
 
             # Test whether user confirmed search or not             
-            if answer in 'Yy':
+            if answer in "Yy":
                 # Create LP_DAAC/NASA Request with default bbox
                 gf_search(config.default_bbox)
                 break
@@ -68,7 +72,7 @@ def gedi_finder():
                 )
 
             # Test whether user confirmed search or not             
-            if answer in 'Yy':
+            if answer in "Yy":
                 # Create LP_DAAC/NASA Request with default bbox
                 gf_search(usr_bbox)
                 break
@@ -179,12 +183,12 @@ def gf_bbox():
         - list: bounding box [ul_lat, ul_lon, lr_lat, lr_lon].
     """
     while True:
-        print('\n' + '--- Enter Bounding Box Coordinates [WGS84 lat/long]:')
+        print("\n" + "--- Enter Bounding Box Coordinates [WGS84 lat/long]:")
         coords = [
-            'Upper-Left Latitude: ',
-            'Upper-Left Longitude: ',
-            'Lower-Right Latitude: ',
-            'Lower-Right Longitude: '
+            "Upper-Left Latitude: ",
+            "Upper-Left Longitude: ",
+            "Lower-Right Latitude: ",
+            "Lower-Right Longitude: "
             ]
         bbox = [
             numbers.readFloat(strings.colors(coords[i], 2)) for i in range(4)
@@ -194,7 +198,7 @@ def gf_bbox():
         if bbox[0] > bbox[2] and bbox[1] < bbox[3]:
             # Return usr_bbox if it is valid
             return bbox
-        print(strings.colors('[ERROR] Enter a valid Bounding Box!', 1))
+        print(strings.colors("[ERROR] Enter a valid Bounding Box!", 1))
 
 
 def gf_search(bbox):
@@ -270,7 +274,7 @@ def gf_search(bbox):
             )
     
     # Create text file with results
-    print('\n ... Requested Successfully Completed ...')
+    print("\n ... Requested Successfully Completed ...")
     
     # Save text file with results
     gf_write_searchResults(
@@ -281,7 +285,7 @@ def gf_search(bbox):
         )
 
     time.sleep(2)
-    print('\n ... Saving GEDI Granules to a text file (".txt") ...')
+    print("\n ... Saving GEDI Granules to a text file ('.txt') ...")
     print("\n" + "- - " * 20 + "\n")
 
 
@@ -307,43 +311,43 @@ def gf_write_searchResults(bbox, prodVers_list, full_list, toDownload_list):
     hms = str(dt.now().hour).zfill(2) + str(dt.now().minute).zfill(2)
     hms += str(dt.second).zfill(2)
     #
-    out_file = 'gedi_finder_links' + os.sep + "GEDI_" + ymd + '_' + hms
+    out_file = "gedi_finder_links" + os.sep + "GEDI_" + ymd + "_" + hms
     out_file += "_bbox_"
-    out_file += '_'.join([str(int(n)) for n in bbox]) + '.txt'
+    out_file += "_".join([str(int(n)) for n in bbox]) + ".txt"
 
     # Create results directory if it does not exist 
-    if not os.path.exists('gedi_finder_links'):
-        os.makedirs('gedi_finder_links')
+    if not os.path.exists("gedi_finder_links"):
+        os.makedirs("gedi_finder_links")
 
     # Save resutls to out_file
-    with open(out_file, 'a+') as f:
+    with open(out_file, "a+") as f:
 
-        f.write('\n# --- GEDI Finder Results\n')
-        f.write(f'User-defined Bounding Box: {bbox}\n\n')
+        f.write("\n# --- GEDI Finder Results\n")
+        f.write(f"User-defined Bounding Box: {bbox}\n\n")
         
-        f.write('# --- GRANULES TO DOWNLOAD\n\n')
+        f.write("# --- GRANULES TO DOWNLOAD\n\n")
         for index, item in enumerate(prodVers_list):
-            f.write(f'\n# - Product: {item[0]} - Version: {item[1]}\n\n')
+            f.write(f"\n# - Product: {item[0]} - Version: {item[1]}\n\n")
             
             # Writing granules to text file
             list_lenght = len(toDownload_list[index])
             for pos, gedi_file in enumerate(toDownload_list[index]):
                 if pos == list_lenght - 1:
-                    f.write(f'{gedi_file}\n')
+                    f.write(f"{gedi_file}\n")
                 else:
-                    f.write(f'{gedi_file},\n')
+                    f.write(f"{gedi_file},\n")
         
-        f.write('\n\n# --- ALL GRANULES\n\n')
+        f.write("\n\n# --- ALL GRANULES\n\n")
         for index, item in enumerate(prodVers_list):
-            f.write(f'\n# - Product: {item[0]} - Version: {item[1]}\n\n')
+            f.write(f"\n# - Product: {item[0]} - Version: {item[1]}\n\n")
             
             # Writing granules to text file
             list_lenght = len(full_list[index])
             for pos, gedi_file in enumerate(full_list[index]):
                 if pos == list_lenght - 1:
-                    f.write(f'{gedi_file}\n')
+                    f.write(f"{gedi_file}\n")
                 else:
-                    f.write(f'{gedi_file},\n')
+                    f.write(f"{gedi_file},\n")
 
 
 # ----- GEDI Storer methods -------------------------------------------------- #
@@ -369,7 +373,7 @@ def gs_get_files(path=config.localStorage):
         files.extend(
             [
                 os.path.basename(f) for f in glob(
-                      path + os.sep + product + os.sep + '*.h5'
+                      path + os.sep + product + os.sep + "*.h5"
                     )
                 ]
             )
@@ -415,11 +419,11 @@ def gs_match_files(files, versions):
         gedi_dict[version] = {}
 
         # Get files for version
-        version_files = [f for f in files if f.endswith(version + '.h5')]
+        version_files = [f for f in files if f.endswith(version + ".h5")]
     
         # Get L1B files for version
         l1b_files = [
-            f for f in version_files if f.startswith('processed_GEDI01_B')
+            f for f in version_files if f.startswith("processed_GEDI01_B")
             ]
         
         # Iterate through L1B files
@@ -470,7 +474,7 @@ def gs_files_to_Process(files_dict):
             final_dict[version] = {}
 
             # Log collection name
-            collec_name = 'processed_v' + version
+            collec_name = "processed_v" + version
 
             # Test whether log exists or not
             if collec_name in db.list_collection_names():
