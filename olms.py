@@ -17,6 +17,7 @@ def gedi_menu():
     # GEDI Facilities menu
     gediMenu = [
         "GEDI Finder - Search LP_DAAC/NASA Database for GEDI Granules",
+        "GEDI Downloader - Download Processed Granules from LPDAAC_NASA",
         "GEDI Storer - Update GEDI MongoDB Database",
         "GEDI Extractor - Extract GEDI Data from MongoDB Database",
         "Return to Main Menu",
@@ -44,14 +45,18 @@ def gedi_menu():
         gediTasks.gedi_finder()
     
     elif gedi_option == 2:
+        # Go to GEDI Downloader Menu
+        gediTasks.gedi_downloader()
+    
+    elif gedi_option == 3:
         # Go to GEDI Storer Menu
         gediTasks.gedi_storer()
     
-    elif gedi_option == 3:
+    elif gedi_option == 4:
         # Go to GEDI Extractor Menu
         gediTasks.gedi_extractor()
     
-    elif gedi_option == 4:
+    elif gedi_option == 5:
         # Return to Main Menu
         print("\n >> Returning to main menu ...\n")
         print("\n" + "- - " * 20, "\n")

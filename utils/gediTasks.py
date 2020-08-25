@@ -2,7 +2,9 @@ import os
 import sys
 import pymongo
 import time
+import tkinter as tk
 
+from tkinter import filedialog
 from glob import glob
 from datetime import datetime
 from utils import strings, numbers, config, geoTasks, gediClasses
@@ -85,6 +87,76 @@ def gedi_finder():
             print("\n" + "- - " * 20, "\n")
             break
         
+        else:
+            # Exit system with a goodbye message
+            sys.exit("\n" + strings.colors("Goodbye, see you!", 1) + "\n")
+
+
+def gedi_downloader():
+    
+    # GEDI Finder menu
+    dest_folder = "...empty..."
+    source_links = "...empty..."
+    files_subset = "[:]"
+    
+    while True:
+        gediDownloader_Menu = [
+            f"Define destination folder (current:{dest_folder})",
+            f"Define file with LPDAAC links (current:{source_links})",
+            "Download Files",
+            "Return to Main Menu",
+            "Exit System"
+            ]
+            
+        # Print options of actions for the user to select 
+        print("\n" + "- - " * 20)
+        print("\n> Download pre-processed GEDI Granules from LPDAAC Server:\n")
+        for pos, options in enumerate(gediDownloader_Menu):
+            print(
+                "[{}] {}".format(
+                    strings.colors(pos+1, 3), strings.colors(options, 2)
+                    )
+                )
+        
+        # Identifying next action
+        downloader_option = numbers.readOption(
+            "Select an option: ", 
+            len(gediDownloader_Menu)
+            )
+        
+        if downloader_option == 1:
+            # Open up filedialog to the user select destination folder
+            root = tk.Tk()
+            root.withdraw()
+            dest_folder = filedialog.askdirectory()
+            print("\n" + "- - " * 20)
+        
+        elif downloader_option == 2:
+            # Open up filedialog to the user select file with links to download
+            root = tk.Tk()
+            root.withdraw()
+            source_links = filedialog.askopenfilename()
+            print("\n" + "- - " * 20)
+        
+        elif downloader_option == 3:
+            if dest_folder != "...empty..." and source_links == "...empty...":
+                gd_download_files(source_links, dest_folder)
+                break
+            else:
+                if dest_folder == "...empty...":
+                    print(f"> Define Destination Folder [Option 1]")
+            
+                elif source_links == "...empty...":
+                    print(f"> Define Links Source File [Option 2]")
+             
+
+        elif downloader_option == 4:
+            # Go to GEDI Extractor Menu
+            # Return to Main Menu
+            print("\n >> Returning to main menu ...\n")
+            print("\n" + "- - " * 20, "\n")
+            break
+
         else:
             # Exit system with a goodbye message
             sys.exit("\n" + strings.colors("Goodbye, see you!", 1) + "\n")
@@ -348,6 +420,54 @@ def gf_write_searchResults(bbox, prodVers_list, full_list, toDownload_list):
                     f.write(f"{gedi_file}\n")
                 else:
                     f.write(f"{gedi_file},\n")
+
+
+# ----- GEDI Downloader methods ---------------------------------------------- #
+
+
+def gd_download_files(src_file, dst_folder):
+    """
+    > gd_download_files(src_file, dst_folder)
+        Function to download files .
+
+    > Arguments:
+        - src_file: Text file containing links for pre-processed GEDI granules;
+        - dst_folder: Destination folder for downloaded files.
+ 
+    > Output:
+        - No outputs (function leads to download of granules).
+    """
+    pass
+
+
+def gd_check_credentials():
+    # Determine if netrc file exists, and if so, if it includes NASA Earthdata Login Credentials
+    try:
+        netrcDir = os.path.expanduser("~/.netrc")
+        netrc(netrcDir).authenticators(urs)[0]
+
+    # Below, create a netrc file and prompt user for NASA Earthdata Login Username and Password
+    except FileNotFoundError:
+        homeDir = os.path.expanduser("~")
+        Popen('touch {0}.netrc | chmod og-rw {0}.netrc | echo machine {1} >> {0}.netrc'.format(homeDir + os.sep, urs), shell=True)
+        Popen('echo login {} >> {}.netrc'.format(getpass(prompt=prompts[0]), homeDir + os.sep), shell=True)
+        Popen('echo password {} >> {}.netrc'.format(getpass(prompt=prompts[1]), homeDir + os.sep), shell=True)
+
+    # Determine OS and edit netrc file if it exists but is not set up for NASA Earthdata Login
+    except TypeError:
+        homeDir = os.path.expanduser("~")
+        Popen('echo machine {1} >> {0}.netrc'.format(homeDir + os.sep, urs), shell=True)
+        Popen('echo login {} >> {}.netrc'.format(getpass(prompt=prompts[0]), homeDir + os.sep), shell=True)
+        Popen('echo password {} >> {}.netrc'.format(getpass(prompt=prompts[1]), homeDir + os.sep), shell=True)
+
+    # Delay for up to 1 minute to allow user to submit username and password before continuing
+    tries = 0
+    while tries < 30:
+        try:
+            netrc(netrcDir).authenticators(urs)[2]
+        except:
+            time.sleep(2.0)
+        tries += 1
 
 
 # ----- GEDI Storer methods -------------------------------------------------- #
