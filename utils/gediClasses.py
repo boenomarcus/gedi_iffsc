@@ -141,11 +141,19 @@ class GEDI_Shots():
             df = pd.DataFrame({
                 "lat": l1b_h5[beam + "/geolocation/latitude_bin0"][l1b_beg:l1b_end],
                 "lon": l1b_h5[beam + "/geolocation/longitude_bin0"][l1b_beg:l1b_end],
-                "shot_number": l1b_h5[beam + "/shot_number"][l1b_beg:l1b_end],
+                "shot_number": [str(s) for s in l1b_h5[beam + "/shot_number"][l1b_beg:l1b_end]],
                 "degrade": l1b_h5[beam + "/geolocation/degrade"][l1b_beg:l1b_end],
                 "stale_return_flag": l1b_h5[beam + "/stale_return_flag"][l1b_beg:l1b_end],
-                "l2a_quality_flag": list(l2a_h5[beam + "/quality_flag"][l2a_beg:l2a_end]),
-                "l2b_quality_flag": list(l2b_h5[beam + "/l2b_quality_flag"][l2b_beg:l2b_end])
+                "l2a_quality_flag": l2a_h5[beam + "/quality_flag"][l2a_beg:l2a_end],
+                "l2b_quality_flag": l2b_h5[beam + "/l2b_quality_flag"][l2b_beg:l2b_end],
+                "omega": l2b_h5[beam + "/omega"][l2b_beg:l2b_end],
+                "cover": l2b_h5[beam + "/cover"][l2b_beg:l2b_end],
+                "pai": l2b_h5[beam + "/pai"][l2b_beg:l2b_end],
+                "rh100": l2b_h5[beam + "/rh100"][l2b_beg:l2b_end],
+                "fhd": l2b_h5[beam + "/fhd_normal"][l2b_beg:l2b_end],
+                "elev_TDX": l1b_h5[beam + "/geolocation/digital_elevation_model"][l1b_beg:l1b_end],
+                "elev_highest": l2a_h5[beam + "/elev_highestreturn"][l2a_beg:l2a_end],
+                "elev_ground": l2a_h5[beam + "/elev_lowestmode"][l2a_beg:l2a_end]
             })
             
             # Get date of shots acquisition
@@ -170,11 +178,19 @@ class GEDI_Shots():
                                 "type": "Point",
                                 "coordinates": [row["lon"], row["lat"]]
                             },
-                            "shot_number": str(row["shot_number"]),
+                            "shot_number": row["shot_number"],
                             "degrade": str(row["degrade"]),
                             "stale_return_flag": str(row["stale_return_flag"]),
                             "l2a_quality_flag": str(row["l2a_quality_flag"]),
                             "l2b_quality_flag": str(row["l2b_quality_flag"]),
+                            "omega": str(row["omega"]),
+                            "cover": str(row["cover"]),
+                            "pai": str(row["pai"]),
+                            "rh100": str(row["rh100"]),
+                            "fhd": str(row["fhd"]),
+                            "elev_TDX": str(row["elev_TDX"]),
+                            "elev_highest": str(row["elev_highest"]),
+                            "elev_ground": str(row["elev_ground"]),
                             "beam": beam,
                             "date_acquired": date_shots,
                             "l1b_file": self.l1b_file,
