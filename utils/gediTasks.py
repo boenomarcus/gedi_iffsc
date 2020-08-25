@@ -487,7 +487,8 @@ def gs_files_to_Process(files_dict):
                         "str2match": match
                     })
 
-                    if len(processed_files) == 0:
+                    # If no matches found, processed_files wil be a NoneType
+                    if processed_files is None:
                         final_dict[version][match] = files_dict[version][match]
             else:
                 # If log does not exist, process all files
