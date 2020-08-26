@@ -2,8 +2,12 @@ import os
 import sys
 import pymongo
 import time
+import requests
 import tkinter as tk
 
+from subprocess import Popen
+from getpass import getpass
+from netrc import netrc
 from tkinter import filedialog
 from glob import glob
 from datetime import datetime
@@ -586,7 +590,73 @@ def gd_files2down(src_file):
         
 
 def gd_download(files2down, beg, end):
-    pass
+
+    # Loop through and download all files
+    fileList = files2down[beg:end]
+    list_length = len(fileList)
+
+    # Retrieve GEDI Products
+    prods = sorted(list(set([f[-49:-41] for f in fileList])))
+
+    # Create and submit request and download file
+    netrcDir = os.path.expanduser("~/.netrc")
+            
+    # Address to call for authentication
+    urs = 'urs.earthdata.nasa.gov'
+
+    # Iterate over gedi products
+    file_counter = 0
+    for prod in prods:
+        
+        # Get files of the given product
+        prodFiles = [f for f in fileList if f[-49:-41] == prod]
+
+        # Defining output folder (see config.localStorage)
+        outFolder = config.localStorage + os.sep + prod
+
+        # Iterate over files
+        for f in prodFiles:
+            
+            # Create filename
+            fileName = os.path.join(outFolder, f.split('/')[-1].strip())
+
+            # Increase file counter
+            file_counter += 1
+
+            # Create and submit request and download file
+            with requests.get(
+                f.strip(), 
+                verify=False, 
+                stream=True, 
+                auth=(
+                    netrc(netrcDir).authenticators(urs)[0], 
+                    netrc(netrcDir).authenticators(urs)[2])
+                ) as response:
+                
+                # Check for login credentials issues
+                if response.status_code != 200:
+                    print("\n{} not downloaded. Verify username/password\n".format(
+                            f.split('/')[-1].strip()
+                            )
+                        )
+                else:
+                    response.raw.decode_content = True
+                    content = response.raw
+                    with open(fileName, 'wb') as d:
+                        print("\nDownloading file {} of {}:\n   > {}...\n".format(
+                                file_counter, 
+                                list_length, 
+                                f
+                                )
+                            )
+                        while True:
+                            chunk = content.read(16 * 1024)
+                            if not chunk:
+                                break
+                            d.write(chunk)
+                    print(strings.colors(f"   > [DONE] File Succesfully downloaded\n", 2))
+
+        
 
 
 def gd_check_credentials():
