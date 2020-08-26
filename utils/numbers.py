@@ -16,6 +16,19 @@ def readOption(txt, numOptions):
                 return option
             print(strings.colors("[ERROR] Enter a valid option!", 1))
 
+def readListIndex(txt, start, end):
+    while True:
+        try:
+            option = int(input(txt).strip())
+        except KeyboardInterrupt:
+            sys.exit("\n\n" + strings.colors("Goodbye, see you!", 1) + "\n")
+        except:
+            print(strings.colors("[ERROR] Enter a valid option!", 1))
+        else:
+            if start <= option < end + 1:
+                return option
+            print(strings.colors("[ERROR] Enter a valid option!", 1))
+
 
 def readFloat(txt="Enter a real (float) number: "):
     while True:

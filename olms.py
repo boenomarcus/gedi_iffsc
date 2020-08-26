@@ -121,7 +121,7 @@ def main_menu():
             gedi_menu()
 
         elif usr_option == 2:
-            print(strings.colors("\nICESat-1 not implemented yet !!!\n", 1))
+            print(strings.colors("\nICESat-2 not implemented yet !!!\n", 1))
             # Go to ICESat-2 Menu
             #ic2_menu()
 

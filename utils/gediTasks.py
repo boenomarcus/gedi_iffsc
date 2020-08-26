@@ -93,22 +93,28 @@ def gedi_finder():
 
 
 def gedi_downloader():
+    """
+    > gedi_downloader()
+        Function to download pre-processed GEDI Granules from LPDAAC Server.
+
+    > Arguments:
+        - No arguments.
     
-    # GEDI Finder menu
-    dest_folder = "...empty..."
+    > Output:
+        - No outputs (function leads to GEDI Granules download).
+    """
+    # Set empty entries 
     source_links = "...empty..."
-    files_subset = "[:]"
-    
+        
     while True:
         gediDownloader_Menu = [
-            f"Define destination folder (current:{dest_folder})",
-            f"Define file with LPDAAC links (current:{source_links})",
-            "Download Files",
+            f"Define file with LPDAAC links (current: {source_links})",
+            "Define subset and download files",
             "Return to Main Menu",
             "Exit System"
             ]
             
-        # Print options of actions for the user to select 
+        # Print options of actions for the user to select
         print("\n" + "- - " * 20)
         print("\n> Download pre-processed GEDI Granules from LPDAAC Server:\n")
         for pos, options in enumerate(gediDownloader_Menu):
@@ -125,32 +131,51 @@ def gedi_downloader():
             )
         
         if downloader_option == 1:
-            # Open up filedialog to the user select destination folder
-            root = tk.Tk()
-            root.withdraw()
-            dest_folder = filedialog.askdirectory()
-            print("\n" + "- - " * 20)
-        
-        elif downloader_option == 2:
             # Open up filedialog to the user select file with links to download
             root = tk.Tk()
             root.withdraw()
             source_links = filedialog.askopenfilename()
-            print("\n" + "- - " * 20)
         
-        elif downloader_option == 3:
-            if dest_folder != "...empty..." and source_links == "...empty...":
-                gd_download_files(source_links, dest_folder)
-                break
-            else:
-                if dest_folder == "...empty...":
-                    print(f"> Define Destination Folder [Option 1]")
-            
-                elif source_links == "...empty...":
-                    print(f"> Define Links Source File [Option 2]")
-             
+        elif downloader_option == 2:
+            if source_links != "...empty...":
+                
+                # Retrieve list of granules to download, and define a subset
+                files2down, beg, end = gd_files2down(source_links)
+                
+                if len(files2down) > 0:
 
-        elif downloader_option == 4:
+                    # Authenticate EarthData login to request downloads
+                    print("\n ... Connecting with LPDAAC_NASA Server ...")
+                    time.sleep(2)
+                    # Checking credentials
+                    gd_check_credentials()
+
+                    # Download files
+                    print("\n ... Starting Download Routine ...\n")
+                    print(f"Files to download: {end-beg}\n")
+                    gd_download(files2down, beg, end)
+                    print(f"\n ...  All files were succesfully downloaded! ...\n")
+                    break
+                
+                else:
+                    print(
+                        strings.colors(
+                            f"\n ...  All files in link list are already downloaded! ...\n", 3
+                            )
+                        )
+                    print("\n" + "- - " * 20, "\n")
+                    break
+
+            else:
+                # Ask user to define links source file prior to resume download
+                if source_links == "...empty...":
+                    print(
+                        strings.colors(
+                            f"> Define Links Source File [Option 1]", 1
+                            )
+                        )
+             
+        elif downloader_option == 3:
             # Go to GEDI Extractor Menu
             # Return to Main Menu
             print("\n >> Returning to main menu ...\n")
@@ -356,8 +381,8 @@ def gf_search(bbox):
         toDownload_list=gedi_granules_to_download
         )
 
-    time.sleep(2)
     print("\n ... Saving GEDI Granules to a text file ('.txt') ...")
+    time.sleep(2)
     print("\n" + "- - " * 20 + "\n")
 
 
@@ -425,22 +450,155 @@ def gf_write_searchResults(bbox, prodVers_list, full_list, toDownload_list):
 # ----- GEDI Downloader methods ---------------------------------------------- #
 
 
-def gd_download_files(src_file, dst_folder):
+def gd_files2down(src_file):
     """
-    > gd_download_files(src_file, dst_folder)
-        Function to download files .
+    > gd_files2down(src_file)
+        Function to retrieve files to be downloaded.
 
     > Arguments:
-        - src_file: Text file containing links for pre-processed GEDI granules;
-        - dst_folder: Destination folder for downloaded files.
+        - src_file: Text file containing links for pre-processed GEDI granules
  
     > Output:
-        - No outputs (function leads to download of granules).
+        - beg: ;
+        - end: ;
+        - finalList: .
     """
+    
+    # Get list of granules to download
+    fileList = []
+    with open(src_file, "r") as f:
+        lines = f.readlines()
+        for item in lines:
+	        fileList.append(item.rstrip("\n"))
+    
+    # Retrieve GEDI Products
+    prods = sorted(list(set([f[-49:-41] for f in fileList])))
+    
+    # Iterate over GEDI Product
+    files2down = []
+    files_alrdDown = []
+    
+    for prod in prods:
+
+        # Create product local storage directory if they do not exist
+        if not os.path.exists(config.localStorage + os.sep + prod):
+            
+            # Create local storage
+            os.makedirs(config.localStorage + os.sep + prod)
+            
+            # Get all files for that product
+            files2down.extend([f for f in fileList if f[-49:-41] == prod])
+        
+        else:
+            # Get list of files already downloaded
+            filesDown = [
+                os.path.basename(f) for f in glob(
+                    config.localStorage + os.sep + prod + os.sep + "*.h5"
+                    )
+            ]
+
+            # Update list of files to download 
+            if len(filesDown) > 0:
+                prodFiles = [f for f in fileList if f[-49:-41] == prod]
+                files2down.extend([f for f in prodFiles if f[-59:] not in filesDown])
+                files_alrdDown.extend([f for f in prodFiles if f[-59:] in filesDown])
+
+            else:
+                files2down.extend([f for f in fileList if f[-49:-41] == prod])
+    
+    if len(files2down) == 0:
+
+        # Print info on number of granules to be downloaded
+        print("\n" + "- - " * 20)
+        print(f"\nLPDAAC_NASA Download links (Granules): {len(fileList)}")
+        print(f"Files already downloaded: {len(files_alrdDown)}")
+        print(f"Files to download: {len(files2down)}\n")
+        
+        # Return nulls if there are no files to download
+        return files2down, None, None
+    
+    else:
+    
+        while True:
+
+            # Print info on number of granules to be downloaded
+            print("\n" + "- - " * 20)
+            print(f"\nLPDAAC_NASA Download links (Granules): {len(fileList)}")
+            print(f"Files already downloaded: {len(files_alrdDown)}")
+            print(f"Files to download: {len(files2down)}\n")
+
+            # Ask if user wants to download a subset of the files
+            gediDownloader_subsetMenu = [
+                    "Download them all",
+                    "Create a subset",
+                    "Return to Main Menu",
+                    "Exit System"
+                    ]
+                    
+            # Print options of actions for the user to select 
+            print("\n> Select an option to download files:\n")
+            for pos, options in enumerate(gediDownloader_subsetMenu):
+                print(
+                    "[{}] {}".format(
+                        strings.colors(pos+1, 3), strings.colors(options, 2)
+                        )
+                    )
+                
+            # Identifying next action
+            downloaderSubset_option = numbers.readOption(
+                "Select an option: ", 
+                len(gediDownloader_subsetMenu)
+                )
+            
+            if downloaderSubset_option == 1:
+                # Download all files
+                beg = 0
+                end = len(files2down)
+                
+            elif downloaderSubset_option == 2:
+                # Ask user to enter a subset
+                print(f"\nFirst index: {0} - Last index: {len(files2down)-1}")
+                beg = numbers.readListIndex("Begin index: ", 0, len(files2down))
+                end = numbers.readListIndex("End index: ", beg+1, len(files2down))
+                
+            elif downloaderSubset_option == 3:
+                # Return to Main Menu
+                print("\n >> Returning to main menu ...\n")
+                print("\n" + "- - " * 20, "\n")
+                break
+                
+            else:
+                # Exit system with a goodbye message
+                sys.exit("\n" + strings.colors("Goodbye, see you!", 1) + "\n")
+            
+            # Ask for user confirmation
+            answer = strings.yes_no_input(
+                f"\nConfirm file subset as [{beg}:{end}] {end-beg} files?! [(y)/n] "
+                )
+
+            # Test whether user confirmed search or not             
+            if answer in "Yy":
+                # Return results
+                return files2down, beg, end
+                break
+            else:
+                print("\n ... Redefining subset ...\n")
+        
+
+def gd_download(files2down, beg, end):
     pass
 
 
 def gd_check_credentials():
+    
+    # Address to call for authentication
+    urs = "urs.earthdata.nasa.gov"
+
+    prompts = [
+        'Enter NASA Earthdata Login Username: ',
+        'Enter NASA Earthdata Login Password: '
+        ]
+    
     # Determine if netrc file exists, and if so, if it includes NASA Earthdata Login Credentials
     try:
         netrcDir = os.path.expanduser("~/.netrc")
