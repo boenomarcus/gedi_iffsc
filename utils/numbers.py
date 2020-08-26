@@ -25,7 +25,7 @@ def readListIndex(txt, start, end):
         except:
             print(strings.colors("[ERROR] Enter a valid option!", 1))
         else:
-            if start <= option < end + 1:
+            if start <= option <= end:
                 return option
             print(strings.colors("[ERROR] Enter a valid option!", 1))
 

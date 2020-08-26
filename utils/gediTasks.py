@@ -149,7 +149,7 @@ def gedi_downloader():
                 if len(files2down) > 0:
 
                     # Authenticate EarthData login to request downloads
-                    print("\n ... Connecting with LPDAAC_NASA Server ...")
+                    print("\n ... Retrieve LPDAAC_NASA Server Credentials ...")
                     time.sleep(2)
                     # Checking credentials
                     gd_check_credentials()
@@ -158,7 +158,7 @@ def gedi_downloader():
                     print("\n ... Starting Download Routine ...\n")
                     print(f"Files to download: {end-beg}\n")
                     gd_download(files2down, beg, end)
-                    print(f"\n ...  All files were succesfully downloaded! ...\n")
+                    print(f"\n ...  Download Routine Completed! ...\n")
                     break
                 
                 else:
@@ -469,11 +469,7 @@ def gd_files2down(src_file):
     """
     
     # Get list of granules to download
-    fileList = []
-    with open(src_file, "r") as f:
-        lines = f.readlines()
-        for item in lines:
-	        fileList.append(item.rstrip("\n"))
+    fileList = [f.strip() for f in open(src_file, "r").readlines()]
     
     # Retrieve GEDI Products
     prods = sorted(list(set([f[-49:-41] for f in fileList])))
@@ -535,7 +531,6 @@ def gd_files2down(src_file):
             gediDownloader_subsetMenu = [
                     "Download them all",
                     "Create a subset",
-                    "Return to Main Menu",
                     "Exit System"
                     ]
                     
@@ -556,20 +551,22 @@ def gd_files2down(src_file):
             
             if downloaderSubset_option == 1:
                 # Download all files
-                beg = 0
+                beg = 1
                 end = len(files2down)
                 
             elif downloaderSubset_option == 2:
                 # Ask user to enter a subset
-                print(f"\nFirst index: {0} - Last index: {len(files2down)-1}")
-                beg = numbers.readListIndex("Begin index: ", 0, len(files2down))
-                end = numbers.readListIndex("End index: ", beg+1, len(files2down))
-                
-            elif downloaderSubset_option == 3:
-                # Return to Main Menu
-                print("\n >> Returning to main menu ...\n")
-                print("\n" + "- - " * 20, "\n")
-                break
+                print(f"\nIndexes: {1} ~ {len(files2down)}")
+                beg = numbers.readListIndex(
+                    f"Begin index [{1}~{len(files2down)-1}]: ", 
+                    1, 
+                    len(files2down)-1
+                    )
+                end = numbers.readListIndex(
+                    f"End index [{beg+1}~{len(files2down)}]: ", 
+                    beg+1, 
+                    len(files2down)
+                    )
                 
             else:
                 # Exit system with a goodbye message
@@ -577,13 +574,15 @@ def gd_files2down(src_file):
             
             # Ask for user confirmation
             answer = strings.yes_no_input(
-                f"\nConfirm file subset as [{beg}:{end}] {end-beg} files?! [(y)/n] "
+                "\nConfirm subset as {}~{} ({} files)?! [(y)/n] ".format(
+                    beg, end, end-beg+1
+                )
                 )
 
             # Test whether user confirmed search or not             
             if answer in "Yy":
                 # Return results
-                return files2down, beg, end
+                return files2down, beg-1, end
                 break
             else:
                 print("\n ... Redefining subset ...\n")
@@ -593,7 +592,7 @@ def gd_download(files2down, beg, end):
 
     # Loop through and download all files
     fileList = files2down[beg:end]
-    list_length = len(fileList)
+    listLen = len(fileList)
 
     # Retrieve GEDI Products
     prods = sorted(list(set([f[-49:-41] for f in fileList])))
@@ -604,8 +603,14 @@ def gd_download(files2down, beg, end):
     # Address to call for authentication
     urs = 'urs.earthdata.nasa.gov'
 
+    # Authentication credentials
+    auth = (
+        netrc(netrcDir).authenticators(urs)[0], 
+        netrc(netrcDir).authenticators(urs)[2]
+        )
+
     # Iterate over gedi products
-    file_counter = 0
+    fileCount = 0
     for prod in prods:
         
         # Get files of the given product
@@ -621,42 +626,50 @@ def gd_download(files2down, beg, end):
             fileName = os.path.join(outFolder, f.split('/')[-1].strip())
 
             # Increase file counter
-            file_counter += 1
+            fileCount += 1
 
-            # Create and submit request and download file
-            with requests.get(
-                f.strip(), 
-                verify=False, 
-                stream=True, 
-                auth=(
-                    netrc(netrcDir).authenticators(urs)[0], 
-                    netrc(netrcDir).authenticators(urs)[2])
-                ) as response:
-                
-                # Check for login credentials issues
+            try:
+                # Try to establish connection and get GEDI Granule
+                response = requests.get(f, verify=False, stream=True, auth=auth)  
+            
+            except ConnectionRefusedError:
+                message = "[ConnectionRefusedError] - Connection denied"
+                print(strings.colors(f"\n{message}\n", 1))
+            
+            else:
+
+                # Check for code status
                 if response.status_code != 200:
-                    print("\n{} not downloaded. Verify username/password\n".format(
-                            f.split('/')[-1].strip()
-                            )
-                        )
+                    fn = f.split('/')[-1].strip()
+                    print(strings.colors(f"\n{fn} not downloaded\n", 1))
+                    print(f"   > Status Code: {response.status_code}")
+                    print("         > Server maintenance downtime - Code: 503")
+                    print("         > Others - Code: Various\n")
+
+                # If OK status code (200) continue to download
                 else:
+
+                    # Get raw web content
                     response.raw.decode_content = True
                     content = response.raw
+                    
+                    # Open file and start writing
                     with open(fileName, 'wb') as d:
-                        print("\nDownloading file {} of {}:\n   > {}...\n".format(
-                                file_counter, 
-                                list_length, 
-                                f
-                                )
-                            )
+
+                        # Print info on granule being downloaded
+                        print(f"\nDownloading {fileCount} of {listLen}:")
+                        print(f"   > {f} ...\n")
+                        
+                        # Reading and writing data
                         while True:
                             chunk = content.read(16 * 1024)
                             if not chunk:
                                 break
                             d.write(chunk)
-                    print(strings.colors(f"   > [DONE] File Succesfully downloaded\n", 2))
-
-        
+                    
+                    # Print indication when granule download is complete
+                    msg = "   > [DONE] File Succesfully downloaded" 
+                    print(strings.colors(f"{msg}\n", 2))
 
 
 def gd_check_credentials():
