@@ -1,12 +1,29 @@
+"""
+OLMS - Orbital LiDAR Management System
+
+System to find, download, store and process GEDI, ICESat-2 and 
+ICESat-1 LiDAR data.
+
+Author: Marcus Moresco Boeno
+
+The system is a work in progress, so more features are being added
+from time to time.
+
+- Currently developing GEDI Extractor features
+
+"""
+
+# Standard library imports
 import sys
 
+# Local appplication imports
 from utils import strings, numbers, gediTasks
 
 
 def gedi_menu():
     """
     > gedi_menu()
-        GEDI Tasks Main Menu.
+        GEDI Main Menu.
 
     > Arguments:
         - No arguments.

@@ -1,16 +1,32 @@
+"""
+GEDI Tasks utilities
+
+Functions to search, download, store and extract GEDI Shots data from
+MongoDB Database
+
+Author: Marcus Moresco Boeno
+
+"""
+
+# Standard library imports
 import os
 import sys
-import pymongo
 import time
 import requests
 import tkinter as tk
 
+# library specific imports
 from subprocess import Popen
 from getpass import getpass
 from netrc import netrc
 from tkinter import filedialog
 from glob import glob
 from datetime import datetime
+
+# Third party library imports
+import pymongo
+
+# Local application imports
 from utils import strings, numbers, config, geoTasks, gediClasses
 
 # Get ROI Shapely Polygon
@@ -271,6 +287,7 @@ def gedi_extractor():
 
 
 # ----- GEDI Finder methods -------------------------------------------------- #
+
 
 def gf_bbox():
     """

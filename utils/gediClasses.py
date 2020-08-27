@@ -1,20 +1,53 @@
+"""
+GEDI Classes
+
+Classes to make HTTPS requests and store GEDI Shot data on MongoDB
+
+Author: Marcus Moresco Boeno
+
+"""
+
+# Standard library imports
 import os
 import sys
 import urllib.request
 import json
+
+# library specific imports
+from datetime import datetime
+from shapely.geometry import Point, Polygon
+
+# Third party library imports
 import h5py
 import pymongo
 import geojson
 import pandas as pd
 import numpy as np
 
-from datetime import datetime
-from shapely.geometry import Point, Polygon
+# Local application imports
 from utils import strings
 
 
 class GEDI_request(object):
+    """
+    GEDI_request class
 
+    Make HTTPS requests to LPDAAC_NASA Server to retrieve GEDI Granules
+    of interest
+
+    Attributes:
+        - lpdaac_base_url: LPDAAC_NASA GEDI Finder base URL;
+        - product: GEDI Product Level;
+        - version: GEDI Product Version;
+        - bbox: Bounding of of ROI (see config.default_bbox);
+        - output: Output format (always set to "json").
+    
+    Methods:
+        - process_request(self): Process request and return list of
+            GEDI granules of interest.
+
+    """
+    # GEDI Finder base URL
     lpdaac_base_url = "https://lpdaacsvc.cr.usgs.gov/services/gedifinder?"
 
     def __init__(self, p, v, bbox):
@@ -24,7 +57,16 @@ class GEDI_request(object):
         self.output = "json"
 
     def process_request(self):
+        """
+        > process_request(self)
+            Make GEDI Finder Request and return list of GEDI Granules.
 
+        > Arguments:
+            - self: GEDI_request instance.
+        
+        > Output:
+            - list: List of GEDI Granules matching a given Bouding Box.
+        """
         # Crete URL to access LP DAAC GEDI-Finder
         url = self.lpdaac_base_url + "product=" + self.product
         url += "&version=" + self.version
@@ -41,9 +83,26 @@ class GEDI_request(object):
 
 class GEDI_Shots():
     """
-    Class to process gedi shots and store data into mongodb
-    """
+    GEDI_Shots class
 
+    Store GEDI Shots data into MongoDB Database
+
+    Attributes:
+        - path: Full path to local storage (see config.localStorage)
+        - l1b_file: GEDI01_B filename that contains the given GEDI Shot
+        - l2a_file: GEDI02_A filename that contains the given GEDI Shot
+        - l2b_file: GEDI02_B filename that contains the given GEDI Shot
+        - version: GEDI Product Version
+        - strMatch: String with Granule unique ID
+        - beams: GEDI BEAM List [BEAM0000, BEAM0001, ..., BEAM1011]
+        - db: Default database (see config.base_mongodb)
+        - extent: Limiting extent to db inserts (see config.roiPath)
+    
+    Methods:
+        - update_process_log(self): Update log of files processed
+        - process_and_store(self): Insert Shot data into MongoDB
+
+    """
     def __init__(self, path, l1b, l2a, l2b, vers, strMatch, beams, db, extent):
         self.path = path
         self.l1b_file = l1b
@@ -57,7 +116,14 @@ class GEDI_Shots():
     
     def update_process_log(self):
         """
-        method to update log of processed files
+        > process_request(self)
+            Update log of files processed into MongoDB Database.
+
+        > Arguments:
+            - self: GEDI_Shots instance.
+        
+        > Output:
+            - No outputs (leads to process log update).
         """
         with pymongo.mongo_client.MongoClient() as mongo:
                     
@@ -73,7 +139,16 @@ class GEDI_Shots():
             })
     
     def process_and_store(self):
+        """
+        > process_request(self)
+            Insert Shot data into MongoDB.
+
+        > Arguments:
+            - self: GEDI_Shots instance.
         
+        > Output:
+            - No outputs (leads to Shot data insertion).
+        """        
         # Print message on file being processed
         print(f"\n> Processing files")
         print(strings.colors(f"     > {self.l1b_file}", 3))
@@ -208,3 +283,4 @@ class GEDI_Shots():
                     
                     # Upload up to 1000 GEDI Shots into MongoDB Shot Collection
                     db["shots_v" + self.version].insert_many(shots)
+
