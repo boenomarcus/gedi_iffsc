@@ -129,7 +129,7 @@ def gedi_downloader():
     while True:
         gediDownloader_Menu = [
             f"Define file with LPDAAC links (current: {source_links})",
-            "Define subset and download files",
+            "Download files",
             "Return to Main Menu",
             "Exit System"
             ]
@@ -151,7 +151,7 @@ def gedi_downloader():
             )
         
         if downloader_option == 1:
-            # Open up filedialog to the user select file with links to download
+            # Open up filedialog to source file selection
             root = tk.Tk()
             root.withdraw()
             source_links = filedialog.askopenfilename()
@@ -160,43 +160,38 @@ def gedi_downloader():
             if source_links != "...empty...":
                 
                 # Retrieve list of granules to download, and define a subset
-                files2down, beg, end = gd_files2down(source_links)
+                files2down = gd_files2down(source_links)
                 
                 if len(files2down) > 0:
 
                     # Authenticate EarthData login to request downloads
-                    print("\n ... Retrieve LPDAAC_NASA Server Credentials ...")
-                    time.sleep(2)
+                    print("\n ... Retrieve LPDAAC_NASA User Credentials ...")
+                    time.sleep(1.5)
                     # Checking credentials
                     gd_check_credentials()
 
                     # Download files
                     print("\n ... Starting Download Routine ...\n")
-                    print(f"Files to download: {end-beg}\n")
-                    gd_download(files2down, beg, end)
+                    time.sleep(1.5)
+                    gd_download(files2down)
                     print(f"\n ...  Download Routine Completed! ...\n")
+                    print("\n" + "- - " * 20, "\n")
                     break
                 
                 else:
-                    print(
-                        strings.colors(
-                            f"\n ...  All files in link list are already downloaded! ...\n", 3
-                            )
-                        )
+
+                    # Informe user that all files are already downloaded
+                    msg = "All files in link list are already downloaded!"
+                    print(strings.colors(f"\n ... {msg} ...\n", 3))
                     print("\n" + "- - " * 20, "\n")
                     break
 
             else:
                 # Ask user to define links source file prior to resume download
-                if source_links == "...empty...":
-                    print(
-                        strings.colors(
-                            f"> Define Links Source File [Option 1]", 1
-                            )
-                        )
+                print(strings.colors("> Define Links Source File!", 1))
+                print("\n" + "- - " * 20, "\n")
              
         elif downloader_option == 3:
-            # Go to GEDI Extractor Menu
             # Return to Main Menu
             print("\n >> Returning to main menu ...\n")
             print("\n" + "- - " * 20, "\n")
@@ -480,12 +475,10 @@ def gd_files2down(src_file):
         - src_file: Text file containing links for pre-processed GEDI granules
  
     > Output:
-        - beg: ;
-        - end: ;
-        - finalList: .
+        - list: List of files (full links) to download.
     """
     
-    # Get list of granules to download
+    # Get list of files
     fileList = [f.strip() for f in open(src_file, "r").readlines()]
     
     # Retrieve GEDI Products
@@ -523,96 +516,34 @@ def gd_files2down(src_file):
             else:
                 files2down.extend([f for f in fileList if f[-49:-41] == prod])
     
-    if len(files2down) == 0:
-
-        # Print info on number of granules to be downloaded
-        print("\n" + "- - " * 20)
-        print(f"\nLPDAAC_NASA Download links (Granules): {len(fileList)}")
-        print(f"Files already downloaded: {len(files_alrdDown)}")
-        print(f"Files to download: {len(files2down)}\n")
-        
-        # Return nulls if there are no files to download
-        return files2down, None, None
+    # Print info on number of granules to be downloaded
+    print("\n" + "- - " * 20)
+    print(f"\nLPDAAC_NASA Download links (Granules): {len(fileList)}")
+    print(f"Files already downloaded: {len(files_alrdDown)}")
+    print(f"Files to download: {len(files2down)}\n")
     
-    else:
+    # Return list of files to download
+    return files2down
     
-        while True:
-
-            # Print info on number of granules to be downloaded
-            print("\n" + "- - " * 20)
-            print(f"\nLPDAAC_NASA Download links (Granules): {len(fileList)}")
-            print(f"Files already downloaded: {len(files_alrdDown)}")
-            print(f"Files to download: {len(files2down)}\n")
-
-            # Ask if user wants to download a subset of the files
-            gediDownloader_subsetMenu = [
-                    "Download them all",
-                    "Create a subset",
-                    "Exit System"
-                    ]
-                    
-            # Print options of actions for the user to select 
-            print("\n> Select an option to download files:\n")
-            for pos, options in enumerate(gediDownloader_subsetMenu):
-                print(
-                    "[{}] {}".format(
-                        strings.colors(pos+1, 3), strings.colors(options, 2)
-                        )
-                    )
-                
-            # Identifying next action
-            downloaderSubset_option = numbers.readOption(
-                "Select an option: ", 
-                len(gediDownloader_subsetMenu)
-                )
-            
-            if downloaderSubset_option == 1:
-                # Download all files
-                beg = 1
-                end = len(files2down)
-                
-            elif downloaderSubset_option == 2:
-                # Ask user to enter a subset
-                print(f"\nIndexes: {1} ~ {len(files2down)}")
-                beg = numbers.readListIndex(
-                    f"Begin index [{1}~{len(files2down)-1}]: ", 
-                    1, 
-                    len(files2down)-1
-                    )
-                end = numbers.readListIndex(
-                    f"End index [{beg+1}~{len(files2down)}]: ", 
-                    beg+1, 
-                    len(files2down)
-                    )
-                
-            else:
-                # Exit system with a goodbye message
-                sys.exit("\n" + strings.colors("Goodbye, see you!", 1) + "\n")
-            
-            # Ask for user confirmation
-            answer = strings.yes_no_input(
-                "\nConfirm subset as {}~{} ({} files)?! [(y)/n] ".format(
-                    beg, end, end-beg+1
-                )
-                )
-
-            # Test whether user confirmed search or not             
-            if answer in "Yy":
-                # Return results
-                return files2down, beg-1, end
-                break
-            else:
-                print("\n ... Redefining subset ...\n")
         
 
-def gd_download(files2down, beg, end):
+def gd_download(files2down):
+    """
+    > gedi_downloader()
+        Function to download pre-processed GEDI Granules from LPDAAC Server.
 
-    # Loop through and download all files
-    fileList = files2down[beg:end]
-    listLen = len(fileList)
+    > Arguments:
+        - files2down: List of files (full link) to download.
+            ---> Output from gd_files2down()
+    
+    > Output:
+        - No outputs (function leads to GEDI Granules download).
+    """
+    # Get number of files to download
+    listLen = len(files2down)
 
     # Retrieve GEDI Products
-    prods = sorted(list(set([f[-49:-41] for f in fileList])))
+    prods = sorted(list(set([f[-49:-41] for f in files2down])))
 
     # Create and submit request and download file
     netrcDir = os.path.expanduser("~/.netrc")
@@ -631,7 +562,7 @@ def gd_download(files2down, beg, end):
     for prod in prods:
         
         # Get files of the given product
-        prodFiles = [f for f in fileList if f[-49:-41] == prod]
+        prodFiles = [f for f in files2down if f[-49:-41] == prod]
 
         # Defining output folder (see config.localStorage)
         outFolder = config.localStorage + os.sep + prod
@@ -675,7 +606,7 @@ def gd_download(files2down, beg, end):
 
                         # Print info on granule being downloaded
                         print(f"\nDownloading {fileCount} of {listLen}:")
-                        print(f"   > {f} ...\n")
+                        print(f"   > {f} ...")
                         
                         # Reading and writing data
                         while True:
@@ -690,7 +621,16 @@ def gd_download(files2down, beg, end):
 
 
 def gd_check_credentials():
+    """
+    > gd_check_credentials()
+        Authenticate User username/password for LPDAAC Server.
+
+    > Arguments:
+        - No arguments.
     
+    > Output:
+        - No outputs (function leads to LPDAAC Server authentication).
+    """
     # Address to call for authentication
     urs = "urs.earthdata.nasa.gov"
 
