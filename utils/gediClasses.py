@@ -15,12 +15,11 @@ import json
 
 # library specific imports
 from datetime import datetime
-from shapely.geometry import Point, Polygon
+from shapely.geometry import Point
 
 # Third party library imports
 import h5py
 import pymongo
-import geojson
 import pandas as pd
 import numpy as np
 
@@ -97,13 +96,15 @@ class GEDI_Shots():
         - beams: GEDI BEAM List [BEAM0000, BEAM0001, ..., BEAM1011]
         - db: Default database (see config.base_mongodb)
         - extent: Limiting extent to db inserts (see config.roiPath)
+        - index_gran: Batch index for granule
+        - num_grans: Number of granule being batch processed
     
     Methods:
         - update_process_log(self): Update log of files processed
         - process_and_store(self): Insert Shot data into MongoDB
 
     """
-    def __init__(self, path, l1b, l2a, l2b, vers, strMatch, beams, db, extent):
+    def __init__(self, path, l1b, l2a, l2b, vers, strMatch, beams, db, extent, index_gran, num_grans):
         self.path = path
         self.l1b_file = l1b
         self.l2a_file = l2a
@@ -113,6 +114,8 @@ class GEDI_Shots():
         self.beams = beams
         self.db = db
         self.extent = extent
+        self.index_gran = index_gran
+        self.num_grans = num_grans
     
     def update_process_log(self):
         """
@@ -150,7 +153,7 @@ class GEDI_Shots():
             - No outputs (leads to Shot data insertion).
         """        
         # Print message on file being processed
-        print(f"\n> Processing files")
+        print(f"\n> Processing files ({self.index_gran}/{self.num_grans})")
         print(strings.colors(f"     > {self.l1b_file}", 3))
         print(strings.colors(f"     > {self.l1b_file}", 3))
         print(strings.colors(f"     > {self.l1b_file}", 3))
@@ -241,7 +244,7 @@ class GEDI_Shots():
             for index, row in df.iterrows():
                 
                 # Create Shapely Point to check if shot is within ROI area
-                shot_geoLocation = Point(row["lat"], row["lon"])
+                shot_geoLocation = Point(row["lon"], row["lat"])
 
                 # Check if the shot is within ROI.
                 # If True store data otherwise move to next shot

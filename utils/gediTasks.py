@@ -25,12 +25,10 @@ from datetime import datetime
 
 # Third party library imports
 import pymongo
+import geopandas as gpd
 
 # Local application imports
 from utils import strings, numbers, config, geoTasks, gediClasses
-
-# Get ROI Shapely Polygon
-roi_poly = geoTasks.shapelyPol_from_GeoJSONSinglePol(config.roiPath)
 
 
 def gedi_finder():
@@ -215,16 +213,16 @@ def gedi_storer():
     """
 
     # Get local storage files
-    files = gs_get_files()
+    all_files = gs_get_files()
 
     # Get gedi versions inside local storage
-    versions = gs_get_versions(files)
+    versions = gs_get_versions(all_files)
 
     # Get dictionary with files per version and product level
-    files_dict = gs_match_files(files, versions)
+    files_dict = gs_match_files(all_files, versions)
 
     # Get dictionary of files to process
-    final_files, numgranules = gs_files_to_Process(files_dict)
+    files, numgranules = gs_files_to_Process(files_dict)
 
     if numgranules == 0:
         print(
@@ -241,10 +239,10 @@ def gedi_storer():
         print(strings.colors(f"\nUpdating {numgranules} GEDI Granules", 2))
 
         # Get dictionary keys
-        for version in list(final_files.keys()):
-            for match in list(final_files[version].keys()):
+        for version in list(files.keys()):
+            for index_gran, match in enumerate(list(files[version].keys())):
 
-                if len(final_files[version][match]) < 3:
+                if len(files[version][match]) < 3:
                     print(f"\nDownload all '{match}' Granules to continue!")
                     print("... Moving to the next GEDI Granule ...\n")
                 else:
@@ -252,14 +250,16 @@ def gedi_storer():
                     # Create class instance to process shots
                     gediShots = gediClasses.GEDI_Shots(
                         path = config.localStorage,
-                        l1b = final_files[version][match][0],
-                        l2a = final_files[version][match][1],
-                        l2b = final_files[version][match][2],
+                        l1b = files[version][match][0],
+                        l2a = files[version][match][1],
+                        l2b = files[version][match][2],
                         vers = version,
                         strMatch = match,
                         beams = config.beam_list,
                         db = config.base_mongodb,
-                        extent = roi_poly
+                        extent = gpd.read_file(config.roiPath)["geometry"][0],
+                        index_gran=index_gran+1, 
+                        num_grans=numgranules
                     )
 
                     # Process shots and store into MongoDB
