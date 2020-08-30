@@ -278,7 +278,198 @@ def gedi_storer():
 
 
 def gedi_extractor():
-    pass
+    """
+    > gedi_extractor()
+        Function to extract GEDI Shot data from MongoDB instance.
+
+    > Arguments:
+        - No arguments.
+    
+    > Output:
+        - No outputs (function leads to GEDI Shot data extraction).
+    """
+    # Set empty entries 
+    geometry_src = "...empty..."
+    buffer = 0
+    output_folder = "...empty..."
+    output_format = "geojson"
+    info2extract = "BASIC Shot Data (config.basicInfo)"
+        
+    while True:
+        gediExtractor_Menu = [
+            f"Define geometry (current: {geometry_src})",
+            f"Define buffer [m] (current: {buffer})",
+            f"Define output folder (current: {output_folder})",
+            f"Define output format (current: {output_format})",
+            f"Define info to extract (current: {info2extract})",
+            "Extract GEDI Shots data",
+            "Return to Main Menu",
+            "Exit System"
+            ]
+            
+        # Print options of actions for the user to select
+        print("\n" + "- - " * 20)
+        print("\n> GEDI Extractor menu:\n")
+        for pos, options in enumerate(gediExtractor_Menu):
+            print(
+                "[{}] {}".format(
+                    strings.colors(pos+1, 3), strings.colors(options, 2)
+                    )
+                )
+        
+        # Identifying next action
+        extractor_option = numbers.readOption(
+            "Select an option: ", 
+            len(gediExtractor_Menu)
+            )
+        
+        if extractor_option == 1:
+            # Open up filedialog to source geometry file
+            root = tk.Tk()
+            root.withdraw()
+            geometry_src = filedialog.askopenfilename()
+
+            # Check if GeoJSON or ESRI Shapefile
+            if geometry_src.split(".")[-1] not in ["geojson", "shp"]:
+                print(
+                    strings.colors(
+                        "\n[ERROR] Select GeoJSON or ESRI Shapefile!",
+                        1
+                        )
+                    )
+                geometry_src = "...empty..."
+                
+        elif extractor_option == 2:
+            while True:
+                # Define buffer in meters
+                buffer = numbers.readFloat("\nEnter a buffer, in meters: ")
+
+                # Check if buffer is valid
+                if buffer >=0:
+                    break
+                else:
+                    print(strings.colors("[ERROR] Enter a positive buffer!", 1))
+        
+        elif extractor_option == 3:
+            # Open up filedialog to select output folder
+            root = tk.Tk()
+            root.withdraw()
+            output_folder = filedialog.askdirectory()
+        
+        elif extractor_option == 4:
+            # Define output format
+            formats = ["geojson", "shp", "csv"]
+
+            # Print format options for the user to select
+            print("\n> Output formats:\n")
+            for pos, options in enumerate(formats):
+                print(
+                    "[{}] {}".format(
+                        strings.colors(pos+1, 3), strings.colors(options, 2)
+                        )
+                    )
+            
+            # Ask user option
+            format_option = numbers.readOption(
+                "Select an option: ", 
+                len(formats)
+                )
+            
+            # Define output format
+            output_format = formats[format_option-1]
+        
+        elif extractor_option == 5:
+            # Define output format
+            infoList = [
+                "BASIC Shot Data (config.basicInfo)", 
+                "FULL Shot Data (config.fullInfo)"]
+
+            # Print format options for the user to select
+            print("\n> GEDI Shots information to extract:\n")
+            for pos, options in enumerate(infoList):
+                print(
+                    "[{}] {}".format(
+                        strings.colors(pos+1, 3), strings.colors(options, 2)
+                        )
+                    )
+            
+            # Ask user option
+            info_option = numbers.readOption(
+                "Select an option: ", 
+                len(infoList)
+                )
+            
+            # Define output format
+            info2extract = infoList[info_option-1]
+        
+        elif extractor_option == 6:
+            # Extract GEDI Shots data
+
+            # Make sure source file and destination folder are set
+            if geometry_src != "...empty..." and output_folder != "...empty...":
+
+                # Ask for user confirmation
+                print("\n> Defined parameters for GEDI Shots extraction:")
+                print(f"  - Source geometry: {strings.colors(geometry_src, 3)}")
+                print(f"  - Buffer: {strings.colors(buffer, 3)}")
+                print(f"  - Output folder: {strings.colors(output_folder, 3)}")
+                print(f"  - Output format: {strings.colors(output_format, 3)}")
+                print(f"  - Info to extract: {strings.colors(info2extract, 3)}")
+                answer = strings.yes_no_input(
+                    f"\nConfirm extraction as described above?! [(y)/n] "
+                    )
+
+                # Test whether user confirmed search or not             
+                if answer in "Yy":
+                    
+                    # Create extraction task
+                    if info2extract == 'BASIC Shot Data (config.basicInfo)':
+                        
+                        pass
+                        # ge_extract_basic_info(
+                        #     geometry_src,
+                        #     buffer,
+                        #     output_folder,
+                        #     output_format
+                        #     )
+                        
+                    else:
+                        pass
+                        # ge_extract_full_info(
+                        #     geometry_src,
+                        #     buffer,
+                        #     output_folder,
+                        #     output_format
+                        #     )
+            else:
+                # Ask user to define missing info
+                if geometry_src == "...empty...":
+                    print(
+                        strings.colors(
+                            "\nDefine geometry source file to continue ...\n",
+                            1
+                            )
+                        )
+
+                if output_folder == "...empty...":
+                    print(
+                        strings.colors(
+                            "\nDefine output folder to continue ...\n",
+                            1
+                            )
+                        )
+                
+        elif extractor_option == 7:
+            # Return to Main Menu
+            print("\n >> Returning to main menu ...\n")
+            print("\n" + "- - " * 20, "\n")
+            break
+
+        else:
+            # Exit system with a goodbye message
+            sys.exit("\n" + strings.colors("Goodbye, see you!", 1) + "\n")
+
+            
 
 
 # ----- GEDI Finder methods -------------------------------------------------- #
