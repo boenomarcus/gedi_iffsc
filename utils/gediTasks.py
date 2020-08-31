@@ -1109,10 +1109,48 @@ def ge_extract_basic_info(geom_src, buffer, out_folder, out_format, mongo_db):
                         general_index = str(geom_index) + str(shotIndex+1)
                         shots_df.loc[general_index] = id_data + shot_data
             
-            
             elif isinstance(row["geometry"], Polygon):
-                pass
+
+                # Get polygon vertices to compose GeoJSON object for query
+                x, y = row["geometry"].exterior.coords.xy
+                pol_coords = [[[lon, lat] for lon, lat in zip(x, y)]]
+                
+                for collec_version in collecs:
+
+                    # Create connection with MongoDB instance
+                    with pymongo.mongo_client.MongoClient() as mongo:
+                                
+                        # Get DB
+                        db = mongo.get_database(mongo_db)
+
+                        # geoQuery for GEDI shots
+                        query_shots = db[collec_version].find(
+                            {
+                                "location": {
+                                    "$geoWithin": {
+                                        "$geometry": {
+                                            "type": "Polygon",
+                                            "coordinates": pol_coords
+                                            }
+                                        }
+                                    }
+                                }
+                            )
+
+                    # Aggregate return cursor, so we have to iterate over it
+                    for shotIndex, shot in enumerate(query_shots):
+
+                        # Get id and gedi version list
+                        id_data = [row["id"], collec_version]
+
+                        # Get shot data as a list
+                        shot_data = list(shot.values()) + [0]
+
+                        # Append shot data to Pandas DataFrame
+                        general_index = str(geom_index) + str(shotIndex+1)
+                        shots_df.loc[general_index] = id_data + shot_data
         
+
         # Get lon, lat info to create shapely geometries
         shots_df = shots_df.assign(
             lon = shots_df.location.apply(lambda x: x["coordinates"][0]),
@@ -1155,13 +1193,13 @@ def ge_extract_basic_info(geom_src, buffer, out_folder, out_format, mongo_db):
             print("")
         
         elif out_format == "geojson":
-            shots_gdf.to_file(outFile + ".geojson", driver="GeoJSON")
+            shots_gdf.to_file(outFile + ".geojson", driver="GeoJSON", index=False)
             print(strings.colors(f"\n... GEDI Shots data save to file:", 2))
             print(f"        > {strings.colors(outFile + '.geojson', 3)}")
             print("")
 
         elif out_format == "shp":
-            shots_gdf.to_file(outFile + ".shp")
+            shots_gdf.to_file(outFile + ".shp", index=False)
             print(strings.colors(f"\n... GEDI Shots data save to file:", 2))
             print(f"        > {strings.colors(outFile + '.shp', 3)}")
             print("")
