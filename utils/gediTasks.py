@@ -25,7 +25,9 @@ from datetime import datetime
 
 # Third party library imports
 import pymongo
+import pandas as pd
 import geopandas as gpd
+from shapely.geometry import Point, Polygon
 
 # Local application imports
 from utils import strings, numbers, config, geoTasks, gediClasses
@@ -425,13 +427,14 @@ def gedi_extractor():
                     # Create extraction task
                     if info2extract == 'BASIC Shot Data (config.basicInfo)':
                         
-                        pass
-                        # ge_extract_basic_info(
-                        #     geometry_src,
-                        #     buffer,
-                        #     output_folder,
-                        #     output_format
-                        #     )
+                        ge_extract_basic_info(
+                            geometry_src, 
+                            buffer, 
+                            output_folder, 
+                            output_format, 
+                            config.base_mongodb
+                            )
+                        
                         
                     else:
                         pass
@@ -1013,3 +1016,155 @@ def gs_files_to_Process(files_dict):
 
 
 # ----- GEDI Extractor methods ----------------------------------------------- #
+
+def ge_extract_basic_info(geom_src, buffer, out_folder, out_format, mongo_db):
+    """
+    > ge_extract_basic_info(geometry_src, buffer, output_folder, output_format)
+        Function to extract GEDI Shot data from MongoDB Instance
+
+    > Arguments:
+        - geom_src: Full path to file with geometries to query,
+        - buffer: Max distance aroung points,
+        - out_folder: Destination folder,
+        - out_format: Output format (csv, shp, geojson),
+        - mongo_db: config.base_mongodb
+    
+    > Output:
+        - No outputs (Writing of external files containing GEDI data)
+    """
+
+    # Get geometry(ies)
+    geoms = gpd.read_file(geom_src)
+
+    # Get collection names referring to GEDI Product version
+    with pymongo.mongo_client.MongoClient() as mongo:
+                        
+        # Get DB
+        db = mongo.get_database(mongo_db)
+
+        # Get collections versions
+        collecs = [c for c in db.collection_names() if c.startswith("shots")]
+    
+    if len(collecs) == 0:
+
+        print("\nNo Shot Data found. Update Database!")
+    
+    else:
+
+        # Get column names
+        with pymongo.mongo_client.MongoClient() as mongo:
+                        
+            # Get DB
+            db = mongo.get_database(mongo_db)
+
+            # Get collections versions
+            columnNames = list(db[collecs[0]].find_one().keys())
+        
+        # Create empty Pandas DataFrame to store results
+        shots_df = pd.DataFrame(
+            columns=["geom_id", "gedi_version"] + columnNames + ["dist2ref"]
+            )
+
+        # Iterating over geometries
+        for geom_index, row in geoms.iterrows():
+
+            if isinstance(row["geometry"], Point):
+
+                for collec_version in collecs:
+
+                    # Create connection with MongoDB instance
+                    with pymongo.mongo_client.MongoClient() as mongo:
+                                
+                        # Get DB
+                        db = mongo.get_database(mongo_db)
+
+                        # geoQuery for GEDI shots
+                        query_shots = db[collec_version].aggregate([
+                                {
+                                    "$geoNear": {
+                                        "near": { 
+                                            "type": "Point", 
+                                            "coordinates": [
+                                                row["geometry"].bounds[0], # lon
+                                                row["geometry"].bounds[1]  # lat
+                                                ]
+                                            },
+                                        "key": "location",
+                                        "distanceField": "dist2ref",
+                                        "maxDistance": buffer
+                                    }
+                                }
+                        ])
+
+                    # Aggregate return cursor, so we have to iterate over it
+                    for shotIndex, shot in enumerate(query_shots):
+
+                        # Get id and gedi version list
+                        id_data = [row["id"], collec_version]
+
+                        # Get shot data as a list
+                        shot_data = list(shot.values())
+
+                        # Append shot data to Pandas DataFrame
+                        general_index = str(geom_index) + str(shotIndex+1)
+                        shots_df.loc[general_index] = id_data + shot_data
+            
+            
+            elif isinstance(row["geometry"], Polygon):
+                pass
+        
+        # Get lon, lat info to create shapely geometries
+        shots_df = shots_df.assign(
+            lon = shots_df.location.apply(lambda x: x["coordinates"][0]),
+            lat = shots_df.location.apply(lambda x: x["coordinates"][1])
+            )
+        
+        # Transform ObjectId to string
+        shots_df._id = shots_df._id.apply(lambda x: str(x))
+
+        # Transform TimeStamp to string
+        shots_df.date_acquired = shots_df.date_acquired.apply(
+            lambda x: str(x).split(" ")[0]
+            )
+
+        # Transform Pandas DF to GeoPandas DF
+        shots_gdf = gpd.GeoDataFrame(
+            shots_df, 
+            geometry=gpd.points_from_xy(shots_df.lon, shots_df.lat)
+            )
+                
+        # Get source filename
+        src_name = os.path.basename(geom_src).split(".")[0]
+
+        # Get info on date and time
+        dt = datetime.now()
+        ymd = str(dt.now().year).zfill(4) + str(dt.now().month).zfill(2)
+        ymd += str(dt.now().day).zfill(2)
+        hms = str(dt.now().hour).zfill(2) + str(dt.now().minute).zfill(2)
+        hms += str(dt.second).zfill(2)
+
+        # Compose output filename
+        fileName = 'gediShots_' + ymd + hms + "_" + src_name
+        outFile = out_folder + "/" + fileName 
+        
+        # Write data
+        if out_format == "csv":
+            shots_gdf.to_csv(outFile + ".csv", index=False)
+            print(strings.colors(f"\n... GEDI Shots data save to file:", 2))
+            print(f"        > {strings.colors(outFile + '.csv', 3)}")
+            print("")
+        
+        elif out_format == "geojson":
+            shots_gdf.to_file(outFile + ".geojson", driver="GeoJSON")
+            print(strings.colors(f"\n... GEDI Shots data save to file:", 2))
+            print(f"        > {strings.colors(outFile + '.geojson', 3)}")
+            print("")
+
+        elif out_format == "shp":
+            shots_gdf.to_file(outFile + ".shp")
+            print(strings.colors(f"\n... GEDI Shots data save to file:", 2))
+            print(f"        > {strings.colors(outFile + '.shp', 3)}")
+            print("")
+        
+
+        
